@@ -1,0 +1,199 @@
+"""
+scheduler.py
+Saatte bir çalışan arka plan görevi -- yeni bir maliyet artışı (spike)
+tespit edilince otomatik olarak e-posta + Teams bildirimi gönderir.
+Aynı artış için TEKRAR bildirim GÖNDERMEZ (AlertHistory tablosunda
+kaydı tutuluyor, ServiceName+Period eşsiz anahtar).
+"""
+import os
+import logging
+from apscheduler.schedulers.background import BackgroundScheduler
+
+from .database import get_connection
+from .dashboard import get_dashboard_summary
+from .email_service import send_cost_alert_email, EmailNotConfiguredError, EmailSendError
+from .teams_service import send_teams_notification, get_teams_recipients, TeamsNotConfiguredError, TeamsSendError
+from .forecast import get_cost_forecast
+
+logger = logging.getLogger("costbot.scheduler")
+
+
+def _already_notified(service_name: str, period: str) -> bool:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT 1 FROM AlertHistory WHERE ServiceName = ? AND Period = ?",
+        (service_name, period),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def _log_notified(service_name: str, period: str, change_pct: float) -> None:
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO AlertHistory (ServiceName, Period, ChangePct) VALUES (?, ?, ?)",
+        (service_name, period, change_pct),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _check_forecast_threshold() -> None:
+    """Tahmini ay sonu maliyeti belirlenen eşiği aşarsa, otomatik olarak
+    Teams + e-posta bildirimi gönderir. Aynı ay için SADECE BİR KEZ
+    bildirir (AlertHistory'deki özel bir 'marker' servis adıyla dedup
+    ediliyor -- yeni bir tablo gerekmiyor)."""
+    threshold_raw = os.getenv("FORECAST_THRESHOLD")
+    if not threshold_raw:
+        return
+    try:
+        threshold = float(threshold_raw)
+    except ValueError:
+        logger.warning("FORECAST_THRESHOLD geçersiz bir sayı: %s", threshold_raw)
+        return
+
+    try:
+        data = get_cost_forecast(language="tr")
+    except Exception as e:
+        logger.error("Forecast eşik kontrolü başarısız: %s", e)
+        return
+
+    if not data.get("available"):
+        return
+
+    estimated = data["estimated_month_end"]
+    period = data["current_month"]
+    marker = "__FORECAST_THRESHOLD__"
+
+    if estimated < threshold:
+        return
+    if _already_notified(marker, period):
+        return
+
+    notify_email = os.getenv("ALERT_NOTIFY_EMAIL")
+    notify_name = os.getenv("ALERT_NOTIFY_NAME", "Kullanıcı")
+    teams_recipient_key = os.getenv("TEAMS_AUTO_ALERT_RECIPIENT")
+    teams_webhook = get_teams_recipients().get(teams_recipient_key) if teams_recipient_key else None
+
+    message = (
+        f"Tahmini ay sonu maliyetiniz ({period}) ${estimated:,.2f} ile "
+        f"belirlediğiniz ${threshold:,.2f} eşiğini aştı."
+    )
+
+    if notify_email:
+        try:
+            send_cost_alert_email(
+                notify_email, notify_name, "Ay Sonu Tahmini Eşik Aşımı",
+                data.get("trend_pct") or 0, estimated,
+            )
+        except (EmailNotConfiguredError, EmailSendError) as e:
+            logger.warning("Otomatik eşik e-postası gönderilemedi: %s", e)
+
+    if teams_webhook:
+        try:
+            send_teams_notification(teams_webhook, "CostBot Tahmin Uyarısı", [message])
+        except (TeamsNotConfiguredError, TeamsSendError) as e:
+            logger.warning("Otomatik eşik Teams bildirimi gönderilemedi: %s", e)
+
+    _log_notified(marker, period, estimated)
+    logger.info("Tahmin eşik aşımı bildirimi gönderildi: %s (%s)", period, estimated)
+
+def _sync_azure_data() -> None:
+    """Günde bir kez (varsayılan), gerçek Azure Cost Management verisini
+    yeniden çeker ve CloudCosts tablosunu günceller. Azure kimlik bilgileri
+    .env'de tanımlı değilse (ör. mock veriyle çalışılan bir ortamda),
+    sessizce atlanır -- hata olarak sayılmaz."""
+    tenant_id = os.getenv("AZURE_TENANT_ID")
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    client_secret = os.getenv("AZURE_CLIENT_SECRET")
+    subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
+
+    if not all([tenant_id, client_id, client_secret, subscription_id]):
+        return
+
+    try:
+        from .azure_cost_fetcher import fetch_azure_cost_rows
+        from .database import load_from_azure
+
+        days = int(os.getenv("AZURE_SYNC_DAYS", "30"))
+        rows = fetch_azure_cost_rows(tenant_id, client_id, client_secret, subscription_id, days=days)
+
+        from datetime import date, timedelta
+        end_date = date.today().isoformat()
+        start_date = (date.today() - timedelta(days=days)).isoformat()
+
+        conn = get_connection()
+        stats = load_from_azure(conn, rows, start_date=start_date, end_date=end_date)
+        conn.close()
+
+        logger.info("Azure verisi otomatik güncellendi: %s satır yüklendi.", stats["inserted"])
+    except Exception as e:
+        logger.error("Otomatik Azure veri senkronizasyonu başarısız: %s", e)
+
+
+def check_and_notify() -> None:
+    """APScheduler tarafından saatte bir çağrılır (ya da /alerts/check-now
+    ile elle tetiklenebilir). Hem servis bazlı ani artışları HEM DE
+    tahmini ay sonu eşik aşımını kontrol eder -- ikisi BİRBİRİNDEN
+    BAĞIMSIZ, biri diğerini engellemez."""
+    try:
+        summary = get_dashboard_summary(language="tr", user_id=None)
+        period = summary.get("current_month") or "bilinmiyor"
+        new_spikes = [s for s in summary["cost_spikes"] if not _already_notified(s["service_name"], period)]
+    except Exception as e:
+        logger.error("Zamanlanmış kontrol başarısız (dashboard verisi alınamadı): %s", e)
+        new_spikes = []
+
+    if new_spikes:
+        notify_email = os.getenv("ALERT_NOTIFY_EMAIL")
+        notify_name = os.getenv("ALERT_NOTIFY_NAME", "Kullanıcı")
+        teams_recipient_key = os.getenv("TEAMS_AUTO_ALERT_RECIPIENT")
+        teams_webhook = get_teams_recipients().get(teams_recipient_key) if teams_recipient_key else None
+
+        for spike in new_spikes:
+            if notify_email:
+                try:
+                    send_cost_alert_email(notify_email, notify_name, spike["service_name"], spike["change_pct"], spike["current_total"])
+                except (EmailNotConfiguredError, EmailSendError) as e:
+                    logger.warning("Otomatik e-posta gönderilemedi (%s): %s", spike["service_name"], e)
+
+            if teams_webhook:
+                try:
+                    send_teams_notification(
+                        teams_webhook, "CostBot Otomatik Maliyet Uyarısı",
+                        [f"**{spike['service_name']}**: %{spike['change_pct']} artış, güncel maliyet ${spike['current_total']:,.2f}"],
+                    )
+                except (TeamsNotConfiguredError, TeamsSendError) as e:
+                    logger.warning("Otomatik Teams bildirimi gönderilemedi (%s): %s", spike["service_name"], e)
+
+            _log_notified(spike["service_name"], period, spike["change_pct"])
+            logger.info("Otomatik uyarı gönderildi: %s (%s)", spike["service_name"], period)
+
+    # Tahmin esik kontrolu -- spike olsun olmasin HER ZAMAN calisir
+    _check_forecast_threshold()
+
+
+_scheduler = None
+
+
+def _daily_job() -> None:
+    """Günde bir kez: önce Azure verisini güncelle, HEMEN ARDINDAN o taze
+    veri üzerinden uyarı kontrolü yap. İkisini AYRI zamanlayıcılara
+    bölmüyoruz -- aksi hâlde uyarı kontrolü, veri henüz güncellenmeden
+    (eski veri üzerinden) çalışabilir, bu da anlamsız/gereksiz olurdu."""
+    _sync_azure_data()
+    check_and_notify()
+
+
+def start_scheduler() -> None:
+    global _scheduler
+    if _scheduler is not None:
+        return
+    _scheduler = BackgroundScheduler()
+
+    sync_hours = int(os.getenv("AZURE_SYNC_INTERVAL_HOURS", "24"))
+    _scheduler.add_job(_daily_job, "interval", hours=sync_hours)
+
+    _scheduler.start()
+    print(f"[scheduler] Zamanlanmış görev başlatıldı ({sync_hours} saatte bir: Azure senkronizasyonu + uyarı kontrolü).")
+    logger.info("Zamanlanmış görev başlatıldı (%s saatte bir: senkronizasyon + kontrol).", sync_hours)
