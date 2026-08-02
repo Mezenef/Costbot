@@ -11,6 +11,7 @@ interface StoredUser {
   user_id: number;
   full_name: string;
   email: string;
+  role: string;
 }
 
 function StatusPill({ status, t }: { status: Recommendation["Status"]; t: (k: string) => string }) {
@@ -151,7 +152,7 @@ export default function RecommendationsPage() {
 
   return (
     <div className="flex bg-gray-50 dark:bg-gray-950 min-h-screen">
-      <Sidebar pendingCount={pendingCount} userName={user?.full_name} />
+      <Sidebar pendingCount={pendingCount} userName={user?.full_name} userRole={user?.role} />
 
       <div className="flex-1 min-w-0">
         <header className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-3.5">

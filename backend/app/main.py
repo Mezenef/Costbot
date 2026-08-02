@@ -151,7 +151,6 @@ class SendTeamsAlertRequest(BaseModel):
     user_id: int
     language: str = "tr"
     service_name: str | None = None
-    recipient: str
 
 class VerifyResetCodeRequest(BaseModel):
     email: str
@@ -160,12 +159,18 @@ class VerifyResetCodeRequest(BaseModel):
 class ResendCodeRequest(BaseModel):
     email: str
 
+class BudgetThresholdUpdate(BaseModel):
+    threshold: float | None = Field(default=None, description="Aylık bütçe eşiği (USD). None = eşik kaldırılır.")
+class TeamsWebhookUpdate(BaseModel):
+    webhook_url: str | None = Field(default=None, description="Kullanıcının kendi Teams webhook adresi. None = kaldırılır.")
 
 class UserOut(BaseModel):
     user_id: int
     full_name: str
     email: str
     role: str
+    budget_threshold: float | None = None
+    teams_webhook_url: str | None = None
 
 
 class RegisterResponse(BaseModel):
@@ -229,11 +234,16 @@ def send_alert_email(body: SendAlertRequest):
 
 
 @app.post("/alerts/send-teams")
+@app.post("/alerts/send-teams")
 def send_teams_alert(body: SendTeamsAlertRequest):
-    recipients = get_teams_recipients()
-    webhook_url = recipients.get(body.recipient)
-    if not webhook_url:
-        raise HTTPException(status_code=404, detail="Bu alıcı için bir Teams webhook'u tanımlı değil")
+    conn = get_connection()
+    user_row = conn.execute(
+        'SELECT TeamsWebhookUrl AS "TeamsWebhookUrl" FROM Users WHERE UserId = ?', (body.user_id,)
+    ).fetchone()
+    conn.close()
+    if not user_row or not user_row["TeamsWebhookUrl"]:
+        raise HTTPException(status_code=400, detail="Teams webhook adresiniz tanımlı değil. Lütfen Ayarlar sayfasından ekleyin.")
+    webhook_url = user_row["TeamsWebhookUrl"]
 
     summary = dashboard.get_dashboard_summary(language=body.language, user_id=body.user_id)
     spikes = summary["cost_spikes"]
@@ -253,11 +263,6 @@ def send_teams_alert(body: SendTeamsAlertRequest):
         raise HTTPException(status_code=503, detail=str(e))
 
     return {"sent": len(spikes)}
-
-
-@app.get("/alerts/teams-recipients")
-def teams_recipients():
-    return {"recipients": list(get_teams_recipients().keys())}
 
 
 @app.get("/resources")
@@ -581,3 +586,61 @@ def sync_real_azure_data_range(start_date: str, end_date: str):
 @app.get("/finops-score")
 def finops_score(language: str = "tr", user_id: int | None = None):
     return dashboard.get_finops_score(language=language, user_id=user_id)
+
+@app.get("/settings/budget-threshold")
+def get_budget_threshold(user_id: int):
+    conn = get_connection()
+    row = conn.execute(
+        'SELECT BudgetThreshold AS "BudgetThreshold" FROM Users WHERE UserId = ?', (user_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    return {"threshold": row["BudgetThreshold"]}
+
+
+@app.put("/settings/budget-threshold")
+def update_budget_threshold(user_id: int, body: BudgetThresholdUpdate):
+    if body.threshold is not None and body.threshold < 0:
+        raise HTTPException(status_code=400, detail="Eşik negatif olamaz.")
+    conn = get_connection()
+    existing = conn.execute("SELECT UserId FROM Users WHERE UserId = ?", (user_id,)).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    conn.execute(
+        "UPDATE Users SET BudgetThreshold = ? WHERE UserId = ?",
+        (body.threshold, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"threshold": body.threshold}
+
+@app.get("/settings/teams-webhook")
+def get_teams_webhook(user_id: int):
+    conn = get_connection()
+    row = conn.execute(
+        'SELECT TeamsWebhookUrl AS "TeamsWebhookUrl" FROM Users WHERE UserId = ?', (user_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    return {"webhook_url": row["TeamsWebhookUrl"]}
+
+
+@app.put("/settings/teams-webhook")
+def update_teams_webhook(user_id: int, body: TeamsWebhookUpdate):
+    if body.webhook_url and not body.webhook_url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="Webhook adresi https:// ile başlamalı.")
+    conn = get_connection()
+    existing = conn.execute("SELECT UserId FROM Users WHERE UserId = ?", (user_id,)).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    conn.execute(
+        "UPDATE Users SET TeamsWebhookUrl = ? WHERE UserId = ?",
+        (body.webhook_url, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"webhook_url": body.webhook_url}

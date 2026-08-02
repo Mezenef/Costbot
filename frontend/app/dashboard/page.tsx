@@ -20,6 +20,7 @@ interface StoredUser {
   user_id: number;
   full_name: string;
   email: string;
+  role: string;
 }
 
 const PIE_COLORS = [
@@ -83,7 +84,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex bg-gray-50 dark:bg-gray-950 min-h-screen">
-      <Sidebar pendingCount={data?.pending_recommendations ?? 0} userName={user?.full_name} />
+      <Sidebar pendingCount={data?.pending_recommendations ?? 0} userName={user?.full_name} userRole={user?.role} />
 
       <div className="flex-1 min-w-0">
         <header className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-3.5">

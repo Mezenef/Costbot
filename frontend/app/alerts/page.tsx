@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import Sidebar from "@/components/Sidebar";
-import { getDashboardSummary, sendAlertEmail, getTeamsRecipients, sendTeamsAlert, CostSpike } from "@/lib/api";
+import { getDashboardSummary, sendAlertEmail, sendTeamsAlert, getTeamsWebhook, CostSpike } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 
 interface StoredUser {
   user_id: number;
   full_name: string;
   email: string;
+  role: string;
 }
 
 function formatMoney(n: number) {
@@ -29,8 +30,7 @@ export default function AlertsPage() {
   const [sendingOne, setSendingOne] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
-  const [teamsRecipients, setTeamsRecipients] = useState<string[]>([]);
-  const [selectedRecipient, setSelectedRecipient] = useState("");
+  const [hasTeamsWebhook, setHasTeamsWebhook] = useState(false);
   const [sendingAllTeams, setSendingAllTeams] = useState(false);
   const [sendingOneTeams, setSendingOneTeams] = useState<string | null>(null);
 
@@ -43,15 +43,12 @@ export default function AlertsPage() {
       getDashboardSummary(locale, parsedUser.user_id)
         .then((d) => setSpikes(d.cost_spikes))
         .finally(() => setLoading(false));
+      getTeamsWebhook(parsedUser.user_id)
+        .then((res) => setHasTeamsWebhook(!!res.webhook_url))
+        .catch(() => {});
     } else {
       setLoading(false);
     }
-    getTeamsRecipients()
-      .then((names) => {
-        setTeamsRecipients(names);
-        if (names.length > 0) setSelectedRecipient(names[0]);
-      })
-      .catch(() => {});
   }, [locale]);
 
   async function handleSendAll() {
@@ -83,12 +80,12 @@ export default function AlertsPage() {
   }
 
   async function handleSendAllTeams() {
-    if (!user || !selectedRecipient) return;
+    if (!user) return;
     setSendingAllTeams(true);
     setMessage("");
     try {
-      const res = await sendTeamsAlert(user.user_id, selectedRecipient, locale);
-      setMessage(t("alerts.teamsSentCount", { count: String(res.sent), recipient: selectedRecipient }));
+      const res = await sendTeamsAlert(user.user_id, locale);
+      setMessage(t("alerts.teamsSentCount", { count: String(res.sent), recipient: "" }));
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Bir hata oluştu.");
     } finally {
@@ -97,12 +94,12 @@ export default function AlertsPage() {
   }
 
   async function handleSendOneTeams(serviceName: string) {
-    if (!user || !selectedRecipient) return;
+    if (!user) return;
     setSendingOneTeams(serviceName);
     setMessage("");
     try {
-      await sendTeamsAlert(user.user_id, selectedRecipient, locale, serviceName);
-      setMessage(t("alerts.teamsSentOne", { service: serviceName, recipient: selectedRecipient }));
+      await sendTeamsAlert(user.user_id, locale, serviceName);
+      setMessage(t("alerts.teamsSentOne", { service: serviceName, recipient: "" }));
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Bir hata oluştu.");
     } finally {
@@ -117,7 +114,7 @@ export default function AlertsPage() {
 
   return (
     <div className="flex bg-gray-50 dark:bg-gray-950 min-h-screen">
-      <Sidebar pendingCount={0} userName={user?.full_name} />
+      <Sidebar pendingCount={0} userName={user?.full_name} userRole={user?.role} />
 
       <div className="flex-1 min-w-0">
         <header className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-3.5">
@@ -149,18 +146,9 @@ export default function AlertsPage() {
             </div>
           )}
 
-          {teamsRecipients.length > 0 && (
-            <div className="flex items-center gap-2 mb-4">
-              <label className="text-xs text-gray-500 dark:text-gray-400">{t("alerts.teamsRecipientLabel")}</label>
-              <select
-                value={selectedRecipient}
-                onChange={(e) => setSelectedRecipient(e.target.value)}
-                className="text-xs font-medium bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {teamsRecipients.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
+          {!hasTeamsWebhook && (
+            <div className="bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs rounded-xl px-4 py-3 mb-4">
+              {t("alerts.noTeamsWebhook")}
             </div>
           )}
 
@@ -185,7 +173,7 @@ export default function AlertsPage() {
                   >
                     {sendingAll ? t("alerts.sending") : t("alerts.sendAll")}
                   </button>
-                  {teamsRecipients.length > 0 && (
+                  {hasTeamsWebhook && (
                     <button
                       onClick={handleSendAllTeams}
                       disabled={sendingAllTeams}
@@ -214,7 +202,7 @@ export default function AlertsPage() {
                       >
                         {sendingOne === s.service_name ? t("alerts.sending") : t("alerts.notify")}
                       </button>
-                      {teamsRecipients.length > 0 && (
+                      {hasTeamsWebhook && (
                         <button
                           onClick={() => handleSendOneTeams(s.service_name)}
                           disabled={sendingOneTeams === s.service_name}

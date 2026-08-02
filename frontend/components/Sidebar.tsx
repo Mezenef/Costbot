@@ -7,9 +7,10 @@ import Logo from "@/components/Logo";
 interface SidebarProps {
   pendingCount?: number;
   userName?: string;
+  userRole?: string;
 }
 
-export default function Sidebar({ pendingCount = 0, userName }: SidebarProps) {
+export default function Sidebar({ pendingCount = 0, userName, userRole }: SidebarProps) {
   const pathname = usePathname();
   const { t } = useLanguage();
 
@@ -67,7 +68,7 @@ export default function Sidebar({ pendingCount = 0, userName }: SidebarProps) {
           </div>
           <div className="min-w-0">
             <div className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{userName || "..."}</div>
-            <div className="text-[10px] text-gray-400 dark:text-gray-500">{t("sidebar.role")}</div>
+            <div className="text-[10px] text-gray-400 dark:text-gray-500">{userRole || t("sidebar.role")}</div>
           </div>
         </div>
       </div>

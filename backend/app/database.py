@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS Users (
     ResetCode TEXT,
     ResetExpiry TEXT,
     Role TEXT DEFAULT 'Kullanıcı',
+    BudgetThreshold REAL,
+    TeamsWebhookUrl TEXT,
     CreatedDate TEXT DEFAULT CURRENT_TIMESTAMP::TEXT
 );
 

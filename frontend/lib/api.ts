@@ -352,18 +352,13 @@ export async function askQuestionStream(
   }
 }
 
-export async function getTeamsRecipients(): Promise<string[]> {
-  const res = await fetch(`${API_URL}/alerts/teams-recipients`);
-  if (!res.ok) throw new Error("Alıcı listesi alınamadı.");
-  const data = await res.json();
-  return data.recipients;
-}
 
-export async function sendTeamsAlert(userId: number, recipient: string, language: string = "tr", serviceName?: string): Promise<{ sent: number }> {
+
+export async function sendTeamsAlert(userId: number, language: string = "tr", serviceName?: string): Promise<{ sent: number }> {
   const res = await fetch(`${API_URL}/alerts/send-teams`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: userId, language, service_name: serviceName, recipient }),
+    body: JSON.stringify({ user_id: userId, language, service_name: serviceName }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -427,5 +422,42 @@ export interface FinOpsScore {
 export async function getFinOpsScore(language: string = "tr", userId?: number): Promise<FinOpsScore> {
   const res = await fetch(`${API_URL}/finops-score?language=${language}&user_id=${userId ?? ""}`);
   if (!res.ok) throw new Error("FinOps Score alınamadı.");
+  return res.json();
+}
+export async function getBudgetThreshold(userId: number): Promise<{ threshold: number | null }> {
+  const res = await fetch(`${API_URL}/settings/budget-threshold?user_id=${userId}`);
+  if (!res.ok) throw new Error("Bütçe eşiği alınamadı.");
+  return res.json();
+}
+
+export async function updateBudgetThreshold(userId: number, threshold: number | null): Promise<{ threshold: number | null }> {
+  const res = await fetch(`${API_URL}/settings/budget-threshold?user_id=${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ threshold }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Bütçe eşiği güncellenemedi.");
+  }
+  return res.json();
+}
+
+export async function getTeamsWebhook(userId: number): Promise<{ webhook_url: string | null }> {
+  const res = await fetch(`${API_URL}/settings/teams-webhook?user_id=${userId}`);
+  if (!res.ok) throw new Error("Teams webhook alınamadı.");
+  return res.json();
+}
+
+export async function updateTeamsWebhook(userId: number, webhookUrl: string | null): Promise<{ webhook_url: string | null }> {
+  const res = await fetch(`${API_URL}/settings/teams-webhook?user_id=${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ webhook_url: webhookUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Teams webhook güncellenemedi.");
+  }
   return res.json();
 }

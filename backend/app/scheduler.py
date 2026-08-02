@@ -39,19 +39,11 @@ def _log_notified(service_name: str, period: str, change_pct: float) -> None:
 
 
 def _check_forecast_threshold() -> None:
-    """Tahmini ay sonu maliyeti belirlenen eşiği aşarsa, otomatik olarak
-    Teams + e-posta bildirimi gönderir. Aynı ay için SADECE BİR KEZ
-    bildirir (AlertHistory'deki özel bir 'marker' servis adıyla dedup
-    ediliyor -- yeni bir tablo gerekmiyor)."""
-    threshold_raw = os.getenv("FORECAST_THRESHOLD")
-    if not threshold_raw:
-        return
-    try:
-        threshold = float(threshold_raw)
-    except ValueError:
-        logger.warning("FORECAST_THRESHOLD geçersiz bir sayı: %s", threshold_raw)
-        return
-
+    """Her kullanıcının KENDİ belirlediği bütçe eşiğini (Users.BudgetThreshold)
+    kontrol eder. Tahmini ay sonu maliyeti bir kullanıcının eşiğini aşarsa,
+    O KULLANICIYA e-posta gönderir -- ayrıca kullanıcının kendi Teams webhook'u
+    (Users.TeamsWebhookUrl) tanımlıysa, oraya da bildirim gönderir. Aynı
+    kullanıcı için aynı ay içinde SADECE BİR KEZ bildirir."""
     try:
         data = get_cost_forecast(language="tr")
     except Exception as e:
@@ -63,40 +55,46 @@ def _check_forecast_threshold() -> None:
 
     estimated = data["estimated_month_end"]
     period = data["current_month"]
-    marker = "__FORECAST_THRESHOLD__"
 
-    if estimated < threshold:
-        return
-    if _already_notified(marker, period):
-        return
+    conn = get_connection()
+    users = conn.execute(
+        'SELECT UserId AS "UserId", FullName AS "FullName", Email AS "Email", '
+        'BudgetThreshold AS "BudgetThreshold", TeamsWebhookUrl AS "TeamsWebhookUrl" '
+        'FROM Users WHERE BudgetThreshold IS NOT NULL'
+    ).fetchall()
+    conn.close()
 
-    notify_email = os.getenv("ALERT_NOTIFY_EMAIL")
-    notify_name = os.getenv("ALERT_NOTIFY_NAME", "Kullanıcı")
-    teams_recipient_key = os.getenv("TEAMS_AUTO_ALERT_RECIPIENT")
-    teams_webhook = get_teams_recipients().get(teams_recipient_key) if teams_recipient_key else None
+    for user in users:
+        threshold = user["BudgetThreshold"]
+        if threshold is None or estimated < threshold:
+            continue
 
-    message = (
-        f"Tahmini ay sonu maliyetiniz ({period}) ${estimated:,.2f} ile "
-        f"belirlediğiniz ${threshold:,.2f} eşiğini aştı."
-    )
+        marker = f"__FORECAST_THRESHOLD__:{user['UserId']}"
+        if _already_notified(marker, period):
+            continue
 
-    if notify_email:
         try:
             send_cost_alert_email(
-                notify_email, notify_name, "Ay Sonu Tahmini Eşik Aşımı",
+                user["Email"], user["FullName"], "Ay Sonu Tahmini Eşik Aşımı",
                 data.get("trend_pct") or 0, estimated,
             )
+            logger.info("Tahmin eşik aşımı e-postası gönderildi: %s (%s, eşik: %s)", user["Email"], period, threshold)
         except (EmailNotConfiguredError, EmailSendError) as e:
-            logger.warning("Otomatik eşik e-postası gönderilemedi: %s", e)
+            logger.warning("Otomatik eşik e-postası gönderilemedi (%s): %s", user["Email"], e)
 
-    if teams_webhook:
-        try:
-            send_teams_notification(teams_webhook, "CostBot Tahmin Uyarısı", [message])
-        except (TeamsNotConfiguredError, TeamsSendError) as e:
-            logger.warning("Otomatik eşik Teams bildirimi gönderilemedi: %s", e)
+        webhook_url = user["TeamsWebhookUrl"]
+        if webhook_url:
+            message = (
+                f"Tahmini ay sonu maliyetiniz ({period}) ${estimated:,.2f} ile "
+                f"belirlediğiniz ${threshold:,.2f} eşiğini aştı."
+            )
+            try:
+                send_teams_notification(webhook_url, "CostBot Tahmin Uyarısı", [message])
+                logger.info("Tahmin eşik aşımı Teams bildirimi gönderildi: %s (%s)", user["Email"], period)
+            except (TeamsNotConfiguredError, TeamsSendError) as e:
+                logger.warning("Otomatik eşik Teams bildirimi gönderilemedi (%s): %s", user["Email"], e)
 
-    _log_notified(marker, period, estimated)
-    logger.info("Tahmin eşik aşımı bildirimi gönderildi: %s (%s)", period, estimated)
+        _log_notified(marker, period, estimated)
 
 def _sync_azure_data() -> None:
     """Günde bir kez (varsayılan), gerçek Azure Cost Management verisini
