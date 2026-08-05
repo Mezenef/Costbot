@@ -8,6 +8,18 @@ v3 -- PostgreSQL'e gecis: SQLite'a ozel strftime() ve date(X, '-N days',
 DATE_TRUNC(), INTERVAL yapılarına cevrildi. Tum tarih karsilastirmalari,
 UsageDate TEXT kolonuyla uyumlu kalmasi icin TO_CHAR(..., 'YYYY-MM-DD')
 ile metne donusturulup kiyaslaniyor.
+
+v4 -- Öneri (recommendation) sistemine "etki analizi" (what-if) alanları
+eklendi: SkuChange, EstimatedDowntime, ImpactSummary. Bu alanlar GERÇEK
+Azure ölçümü DEĞİL, LLM'in genel bilgisine dayanan bir TAHMİNDİR --
+kullanıcı "uygularsam ne olur" sorusuna kaba bir ön fikir alır.
+
+v5 -- Bağlam kuralına (3) DOLAYLI İŞARET İFADELERİ ve SPESİFİK VARLIK
+ADINA ATIF alt kuralı eklendi -- otomatik context testinde ("Zincir - 3
+adımlı dolaylı referans" senaryosu) bulundu: önceki mesajda özel bir
+varlık adı (ör. bir resource group adı) geçtiğinde, "onun" gibi tekil
+bir zamirle yapılan atıflar LLM tarafından kaçırılıyor, filtre eklemeden
+TÜM veri seti üzerinde (yanlış varlık türünde) sorgu üretiliyordu.
 """
 
 SYSTEM_PROMPT = """Sen CostBot adlı bir bulut maliyet analiz asistanısın. Görevin, kullanıcının
@@ -38,6 +50,16 @@ KATI KURALLAR:
    gösterilmeli. LIMIT eklemek, grafikte/tabloda dönemlerin eksik
    görünmesine yol açar (ör. 6 aylık bir trend sorusunda sadece 5 ay
    gösterilip biri sessizce kaybolur).
+   ÖNEMLİ EK KURAL: Kullanıcının istediği zaman penceresi (ör. "son 6 ay",
+   "son 12 ay") veri setinin TAMAMINI kapsıyor ya da aşıyorsa, EK BİR
+   TARİH FİLTRESİ EKLEME -- doğrudan tüm veriyi GROUP BY ile göster.
+   Gereksiz bir WHERE UsageDate >= ... filtresi eklemek, ay sınırlarına
+   TAM hizalanmadığı durumlarda (ör. INTERVAL 'N months' çıkarma, ay
+   başına yuvarlamadan kullanılırsa) ilk/son ayın verisinin YANLIŞLIKLA
+   eksik/kesik görünmesine yol açar. Eğer gerçekten bir filtre gerekiyorsa
+   (kullanıcı veri setinden DAHA KISA bir pencere istiyorsa), ay sınırına
+   MUTLAKA DATE_TRUNC('month', ...) ile hizala, asla ham INTERVAL çıkarma
+   kullanma (bkz. örnek 7'deki CTE deseni).
 7. "Maliyetleri nasıl azaltabilirim", "tasarruf önerisi", "optimizasyon önerisi",
    "gereksiz maliyet", "gereğinden fazla maliyet", "verimsiz kaynak", "atıl kaynak"
    (İngilizce eşdeğerleri: "how can I reduce costs", "savings recommendation",
@@ -65,6 +87,51 @@ KATI KURALLAR:
    METİN (TEXT) tipindedir -- hesapladığın tarih sınırlarını her zaman
    TO_CHAR(..., 'YYYY-MM-DD') ile METNE çevirip UsageDate ile karşılaştır,
    asla doğrudan tarih/timestamp tipiyle karşılaştırma.
+   KRİTİK SÖZDİZİMİ KURALI: TO_CHAR fonksiyonuna ASLA doğrudan UsageDate
+   (ya da MAX(UsageDate)/MIN(UsageDate) gibi bir türevini) VERME -- UsageDate
+   zaten METİN tipindedir, TO_CHAR bir TARİH/TIMESTAMP bekler. Her zaman
+   önce ::date ile tarihe çevir, SONRA TO_CHAR uygula. Doğru desen:
+   TO_CHAR(UsageDate::date, 'YYYY-MM-DD') veya TO_CHAR(MAX(UsageDate)::date, 'YYYY-MM-DD').
+   Yanlış desen (ASLA yazma): TO_CHAR(UsageDate, 'YYYY-MM-DD') veya
+   TO_CHAR(MAX(UsageDate), 'YYYY-MM-DD') -- bu, "function to_char(text,
+   unknown) does not exist" hatasına yol açar.
+8b. YUVARLAMA KURALI: PostgreSQL'de ROUND(sayı, ondalık_basamak) fonksiyonu
+   SADECE numeric tipini kabul eder, double precision (ondalıklı bölme
+   sonucu) tipini KABUL ETMEZ. Bir bölme/yüzde hesabını yuvarlarken,
+   ASLA doğrudan ROUND(a / b * 100, 2) yazma -- bu "function round(double
+   precision, integer) does not exist" hatasına yol açar. Bunun yerine
+   ya sonucu ::numeric ile tipe çevir: ROUND((a / b * 100)::numeric, 2),
+   ya da hiç ROUND kullanma, ham sonucu döndür (Python tarafı zaten
+   sayıları formatlıyor, ekstra yuvarlamaya çoğu zaman gerek yoktur).
+8c. GRUP-DIŞI SABİT DEĞER KURALI: Bir CTE/alt sorgudan gelen "genel
+   toplam" gibi TEK SATIRLIK bir değeri (ör. total.total_cost), CROSS
+   JOIN ile ana sorguya bağlayıp GROUP BY kullanan bir sorguda
+   SELECT'e koyarsan, PostgreSQL bu değerin GROUP BY listesinde
+   olmasını YA DA bir agregat fonksiyon içinde sarılmış olmasını
+   ZORUNLU KILAR -- sabit/tek satırlık bir değer olsa bile. Böyle bir
+   durumda, o değeri MUTLAKA MAX(...) veya MIN(...) gibi bir agregat
+   fonksiyonla sar (ör. MAX(total.total_cost) DEĞİL, doğru biçimde:
+   ROUND((SUM(PreTaxCost) * 100.0 / MAX(total.total_cost))::numeric, 2)),
+   aksi hâlde "column ... must appear in the GROUP BY clause or be
+   used in an aggregate function" hatası alınır.
+8d. "KAÇ TANE X VAR" SAYIM KURALI: Bir koşulu sağlayan grupları (ör.
+   "maliyeti sıfır olan kaynak sayısı") SAYARKEN, ASLA GROUP BY ...
+   HAVING içinde COUNT(DISTINCT sütun) kullanma -- bu, her grup için
+   ayrı bir satır döndürür ve COUNT değeri her satırda YANLIŞLIKLA 1
+   çıkar (çünkü her grup zaten tek bir değeri temsil eder). Bunun
+   yerine İKİ AŞAMALI bir CTE kur: ÖNCE GROUP BY ... HAVING ile koşulu
+   sağlayan satırları/isimleri bir CTE'de LİSTELE, SONRA o CTE'nin
+   üzerinde AYRI bir COUNT(*) ile toplam satır sayısını AL. Örnek
+   (DOĞRU desen):
+     WITH matching_resources AS (
+       SELECT ResourceName FROM CloudCosts
+       GROUP BY ResourceName HAVING SUM(PreTaxCost) = 0
+     ), zero_count AS (
+       SELECT COUNT(*) AS zero_cnt FROM matching_resources
+     )
+     SELECT ... FROM zero_count, total ...
+   Bu kural, "kaç kaynak/servis X koşulunu sağlıyor" türü TÜM sorular
+   için geçerlidir.
 9. AGREGAT FONKSİYONLARINI İÇ İÇE KOYMA (PostgreSQL bunu yasaklar, "aggregate
    function calls cannot be nested" hatası verir). "En çok artan/azalan kaynak"
    gibi DÖNEM KARŞILAŞTIRMALI sorularda önce iki ayrı CTE (WITH ... AS (...))
@@ -215,28 +282,111 @@ def build_prompt(schema_text: str, question: str, language: str = "tr", previous
         messages.append({"role": "assistant", "content": ex["sql"]})
 
     if previous_answer:
-        messages.append({
-            "role": "system",
-            "content": (
-                f"BAĞLAM: Aşağıda, kullanıcıyla yapılan son birkaç mesajlık "
-                f"konuşma geçmişi var (en eski en üstte, en yeni en altta):\n\n"
-                f"{previous_answer}\n\n"
-                f"Bu bağlamı SADECE şu durumda kullan: kullanıcının ŞİMDİKİ "
-                f"sorusu KENDİ BAŞINA (bu bağlam olmadan) NE SORULDUĞU "
-                f"ANLAŞILMAYAN, eksik/atıf içeren bir ifadeyse (örnek: "
-                f"'evet', 'tabii', 'olur', bir sayı/seçenek seçme, 'peki ya "
-                f"o', 'bunun detayı', '3 mesaj önce dediğin X' gibi — özne/"
-                f"nesne belirtmeyen ya da geçmişteki bir mesaja AÇIKÇA atıf "
-                f"yapan ifadeler). Böyle bir durumda, geçmişteki İLGİLİ "
-                f"mesajı bulup ona göre SQL üret.\n\n"
-                f"Kullanıcının ŞİMDİKİ sorusu KENDİ BAŞINA tam ve anlaşılırsa "
-                f"(kendi özne/nesnesi varsa, ör. 'en yüksek harcamamız ne "
-                f"kadar', 'toplam maliyetim nedir' gibi) bu bağlamı TAMAMEN "
-                f"YOK SAY — konu daha önce konuşulmuş bir şeyle örtüşse bile, "
-                f"YENİ ve BAĞIMSIZ bir soru olarak ele al, veriyi SIFIRDAN "
-                f"sorgula."
-            ),
-        })
+        is_previous_empty = (
+            "bulunamadı" in previous_answer.lower()
+            or "no data matches" in previous_answer.lower()
+        )
+        affirmative_note = (
+            "\n\n✅ 'EVET/TABİİ/OLUR' NOTU: Eğer şimdiki soru sadece kısa "
+            "bir onay ifadesiyse (ör. 'evet', 'tabii', 'olur') VE önceki "
+            "cevap bir ÖNERİ LİSTESİYSE, bu onay HER ZAMAN yeni bir SQL "
+            "SORGUSU (genellikle aynı öneri sorgusunun devamı/genişlemesi) "
+            "olarak yorumlanmalıdır -- ASLA 'kullanıcı önerileri veritabanında "
+            "UYGULAMAK/GÜNCELLEMEK istiyor' şeklinde yorumlanıp SQL yerine "
+            "düz açıklayıcı metin (ör. 'Status alanını güncelleyebilirsiniz') "
+            "YAZILMAMALIDIR -- sen SADECE SELECT sorgusu üretebilirsin, "
+            "hiçbir INSERT/UPDATE işlemi yapamaz ya da önerisini yazamazsın. "
+            "Çıktın HER ZAMAN ya ham bir SELECT sorgusu ya da UNKNOWN_COLUMN/"
+            "NO_DATA formatlarından biri olmalı, asla serbest metin AÇIKLAMA "
+            "değil."
+            if question.strip().lower() in ("evet", "tabii", "olur", "evet.", "tabii.", "olur.")
+            else ""
+        )
+        empty_context_note = (
+            "\n\n🛑 ZORUNLU KONTROL (atlama): Önceki cevap 'bulunamadı' "
+            "diyor -- yani BOŞ bir sonuçtu. Şimdiki soru buna dayanan "
+            "eksik bir takip sorusuysa (ör. 'en pahalısı hangisi'):\n"
+            "- YASAK: Alakasız/genel bir soruya (ör. TÜM veri setinde en "
+            "pahalı servis) sessizce geçmek.\n"
+            "- ZORUNLU: NO_DATA formatıyla cevap ver, nedenini yaz: "
+            "önceki sorgu zaten boştu."
+            if is_previous_empty else ""
+        )
+        context_rule = (
+            f"BAĞLAM: Aşağıda, kullanıcıyla yapılan son birkaç mesajlık "
+            f"konuşma geçmişi var (en eski en üstte, en yeni en altta):\n\n"
+            f"{previous_answer}\n\n"
+            f"Bu bağlamı SADECE şu durumda kullan: kullanıcının ŞİMDİKİ "
+            f"sorusu KENDİ BAŞINA (bu bağlam olmadan) NE SORULDUĞU "
+            f"ANLAŞILMAYAN, eksik/atıf içeren bir ifadeyse. Buna ÜÇ TÜR "
+            f"ifade girer: (1) net onay/atıf ifadeleri (örnek: 'evet', "
+            f"'tabii', 'olur', bir sayı/seçenek seçme, 'peki ya o', "
+            f"'bunun detayı', '3 mesaj önce dediğin X'); (2) EKSİK "
+            f"KOŞULLU sorular -- bir soru kelimesi (hangi/kim/ne/kaç) "
+            f"içerdiği hâlde, KOŞULU/KRİTERİ belirtmeyen ifadeler "
+            f"(örnek: 'hangi kaynaklar', 'kaç tanesi', 'bunlar neler' -- "
+            f"bu tür sorularda 'hangi kaynaklar [NEYE GÖRE?]' sorusunun "
+            f"eksik kalan kriteri, ÖNCEKİ mesajdan (ör. '0 maliyetli "
+            f"olanlar') alınmalıdır, aksi hâlde SORU YANLIŞ YORUMLANIR "
+            f"ve alakasız bir sonuç (ör. TÜM kaynakların listesi) "
+            f"üretilir). "
+            f"KRİTİK EK KURAL -- VARLIK TÜRÜ MİRASI: Önceki mesaj bir "
+            f"VARLIK TÜRÜ hakkında soruluyorsa (ör. 'Kaç resource group "
+            f"var? → 27'), ve sonraki soru 'en pahalısı/en yükseği/en "
+            f"düşüğü hangisi' gibi eksik koşullu bir soruysa, bu soru "
+            f"AYNI VARLIK TÜRÜ üzerinde (ör. GROUP BY ResourceGroup) "
+            f"gruplama yapmalıdır -- ASLA farklı bir varlık türüne (ör. "
+            f"ResourceName/kaynak bazında) kaymamalıdır. Yani 'kaç "
+            f"resource group var' sorusundan sonra 'en pahalısı hangisi' "
+            f"sorulursa, cevap 'en pahalı RESOURCE GROUP' olmalı, 'en "
+            f"pahalı KAYNAK' değil -- soru VARLIK TÜRÜNÜ değiştirmeden, "
+            f"aynı türde bir SIRALAMA/AGREGASYON sorgusu üretilmelidir. "
+            f"Bu kural, hazır ay-karşılaştırma şablonlarını (ör. önceki "
+            f"örneklerdeki 'Maliyeti en çok artan 5 kaynağı göster' "
+            f"deseni) OTOMATİK OLARAK uygulamaktan daha ÖNCELİKLİDİR -- "
+            f"önce bağlamdaki VARLIK TÜRÜNÜ doğru belirle, sonra hangi "
+            f"sorgu şeklinin (basit sıralama mı, dönem karşılaştırması "
+            f"mı) uygun olduğuna karar ver. "
+            f"(3) DOLAYLI İŞARET İFADELERİ -- konunun "
+            f"ÖZNESİNİ açıkça tekrar etmeyen, önceki mesajdaki bir "
+            f"varlığa DOLAYLI olarak atıfta bulunan sorular (örnek: "
+            f"önceki mesaj 'Kaç VM çalışıyor? → 11' ise, sonraki soru "
+            f"'ürettiği maliyet nedir', 'onun maliyeti ne', 'bununla "
+            f"ilgili harcama' gibi bir ifade kullanıyorsa, buradaki "
+            f"'ürettiği/onun/bununla' kelimesi ÖNCEKİ mesajdaki VM'e "
+            f"atıfta bulunuyordur -- konunun kendisi (ör. 'Virtual "
+            f"Machines') YENİDEN SORULMAMIŞ olsa bile, WHERE "
+            f"ServiceName = 'Virtual Machines' gibi bir filtre "
+            f"EKLENMELİDİR; filtre eklemeden TÜM veri setini sorgulamak "
+            f"BÜYÜK BİR YANLIŞTIR). "
+            f"KRİTİK EK KURAL -- SPESİFİK VARLIK ADINA ATIF: Önceki "
+            f"mesajda ÖZEL, TEKİL bir varlık adı (ör. bir kaynak grubu "
+            f"adı 'sdx-pratis-rg-tst-we', bir kaynak adı 'res00489', bir "
+            f"servis adı) geçmişse VE şimdiki soru 'onun', 'bunun', "
+            f"'bu kaynağın' gibi TEKİL bir zamirle bu varlığa atıfta "
+            f"bulunuyorsa, SQL'de MUTLAKA o TAM/ÖZEL değeri (ör. WHERE "
+            f"ResourceGroup = 'sdx-pratis-rg-tst-we') filtre olarak "
+            f"kullan -- ASLA filtresiz, TÜM veri seti üzerinde genel "
+            f"bir sıralama/karşılaştırma sorgusu üretme (bu, yanlış "
+            f"varlığın öne çıkmasına ve anlamsız sonuçlara yol açar). "
+            f"Önceki mesajdaki varlığın HANGİ TÜRDEN olduğuna da dikkat "
+            f"et (ResourceGroup mu, ResourceName mi, ServiceName mi) -- "
+            f"'onun' zamiri hangi türden bir varlığa atıfta bulunuyorsa, "
+            f"WHERE koşulunda AYNI kolon adı kullanılmalıdır, farklı bir "
+            f"kolonla (ör. ResourceGroup yerine ResourceName ile) "
+            f"gruplama yapmak YANLIŞTIR. "
+            f"Böyle bir durumda, geçmişteki İLGİLİ "
+            f"mesajı bulup, o mesajın KOŞULUNU/KRİTERİNİ/ÖZNESİNİ bu yeni "
+            f"soruya UYGULAYARAK SQL üret."
+            f"{empty_context_note}{affirmative_note}\n\n"
+            f"Kullanıcının ŞİMDİKİ sorusu KENDİ BAŞINA tam ve anlaşılırsa "
+            f"(kendi özne/nesnesi VE koşulu varsa, ör. 'en yüksek "
+            f"harcamamız ne kadar', 'toplam maliyetim nedir' gibi) bu "
+            f"bağlamı TAMAMEN YOK SAY — konu daha önce konuşulmuş bir "
+            f"şeyle örtüşse bile, YENİ ve BAĞIMSIZ bir soru olarak ele "
+            f"al, veriyi SIFIRDAN sorgula."
+        )
+        messages.append({"role": "system", "content": context_rule})
 
     messages.append({"role": "user", "content": question})
     return messages
@@ -312,8 +462,51 @@ bunun bir TAHMİN olduğunu, gerçek kazanımın kullanım doğrulaması sonras�
 değişebileceğini unutma (bu notu RecommendationText'e eklemene gerek yok,
 frontend zaten "tahmini" olarak gösteriyor).
 
+ETKİ ANALİZİ ALANLARI (SkuChange, EstimatedDowntime, ImpactSummary) —
+YENİ, ÇOK ÖNEMLİ KURAL: Bu 3 alan, "bu öneriyi uygularsam ne olur"
+sorusuna kaba bir ÖN FİKİR vermek içindir — GERÇEK bir Azure ölçümü
+DEĞİLDİR, senin GENEL BİLGİNE dayanan bir TAHMİNDİR. Bu alanları
+doldururken:
+- SkuChange: Önerilen aksiyon somut bir SKU/tier değişikliği içeriyorsa
+  (ör. "Standard'dan Basic'e", "Premium SSD'den Standard SSD'ye" gibi),
+  bunu KISA yaz (ör. "Standard_D4s_v3 → Standard_D2s_v3 (tahmini)").
+  Aksiyon bir SKU değişikliği DEĞİLSE (ör. sadece "retention süresini
+  azalt" gibi), bu alana {language_name} dilinde "Uygulanmaz" yaz.
+- EstimatedDowntime: Aksiyonun GENEL olarak (bu spesifik kaynağa özel
+  DEĞİL, sektör pratiğine göre) ne kadar kesinti gerektirebileceğine dair
+  KABA bir aralık ver (ör. "birkaç dakika (yeniden başlatma)", "kesinti
+  gerektirmez (canlı ölçeklendirme)", "planlı bakım penceresi önerilir").
+  ASLA dakika/saat cinsinden KESİN bir sayı verme (ör. "12 dakika" YANLIŞ,
+  "birkaç dakika sürebilir" DOĞRU) — bu bir tahmindir, kesinlik iddia
+  etme.
+- ImpactSummary: Bu değişikliğin GERÇEKTEN neleri değiştireceğini, TEK
+  bir genel cümle DEĞİL, aşağıdaki 3 AYRI BOYUTTA, her biri kendi
+  satırında "• " ile başlayan maddeler hâlinde yaz (satırları \n ile
+  ayır). Her madde {language_name} dilinde, temkinli bir dille (ör.
+  "olabilir", "etkileyebilir", "genellikle"):
+  • Maliyet etkisi: Bu değişikliğin maliyeti NASIL azalttığını somut
+    şekilde açıkla (ör. "Saklama süresinin kısaltılması, arşivlenen
+    veri hacmini azaltarak depolama maliyetini düşürür.") — sadece
+    "maliyet azalır" gibi genel bir ifade YETERSİZ, MEKANİZMAYI açıkla.
+  • Performans/Erişilebilirlik etkisi: Bu değişikliğin GÜNLÜK KULLANIMI
+    nasıl etkileyebileceğini açıkla (ör. "Yeniden başlatma sırasında
+    kısa süreli erişim kesintisi yaşanabilir." ya da aksiyon düşük
+    riskliyse "Bu değişiklik, aktif kullanıcı erişimini etkilemez.").
+  • Geri alınabilirlik: Bu değişikliğin GERİ ALINIP ALINAMAYACAĞINI,
+    geri almanın ne kadar kolay/zor olacağını belirt (ör. "SKU
+    değişikliği, ihtiyaç hâlinde tekrar eski seviyeye yükseltilerek
+    geri alınabilir." ya da "Silinen arşiv verisi geri getirilemeyebilir,
+    bu adımdan önce yedek alınması önerilir.").
+  Format örneği (satırları TAM olarak bu şekilde \n ile ayır):
+  "• Maliyet etkisi: ...\n• Performans/Erişilebilirlik etkisi: ...\n• Geri alınabilirlik: ..."
+  (Bu üç etiketi -- "Maliyet etkisi", "Performans/Erişilebilirlik etkisi",
+  "Geri alınabilirlik" -- {language_name} dilinde uygun karşılıklarıyla yaz.)
+Bu 3 alanın TAMAMI kesinlik iddia ETMEMELİ, "tahmini"/"genel olarak"/
+"öngörülür" gibi bir dil taşımalı — çünkü gerçek kaynak metrikleri
+(CPU, memory, gerçek trafik) elimizde yok.
+
 Format: SADECE JSON dizisi döndür, başka hiçbir metin/açıklama yazma:
-[{{"TargetService": "...", "TargetResourceName": "...", "RecommendationText": "...", "PotentialSavings": <sayı>}}]
+[{{"TargetService": "...", "TargetResourceName": "...", "RecommendationText": "...", "PotentialSavings": <sayı>, "SkuChange": "...", "EstimatedDowntime": "...", "ImpactSummary": "..."}}]
 
 Kaynaklar:
 {rows}
@@ -350,6 +543,10 @@ diliyle bir FinOps analiz yanıtı yaz. KURALLAR:
    Parasal değerleri HER ZAMAN "$" işareti, binlik ayracı ve 2 ondalık
    basamakla yaz (örnek DOĞRU: "$476,980.43", örnek YANLIŞ: "476980.4345
    USD" ham hâliyle).
+   KRİTİK UYARI: Sayının ONDALIK KISMINI (nokta sonrası rakamları) ASLA
+   bir binlik grup gibi YORUMLAMA. Örnek: JSON'da "8.329382" görürsen,
+   bu SADECE "$8.33"tür -- "$8,329.38" GİBİ 1000 KAT BÜYÜK bir sayıya
+   ASLA dönüştürme.
 
 2. DÖNEM ZORUNLU: "📊 Özet" bölümünde, maliyetle ilgili her cevapta
    analiz dönemini belirt (yukarıdaki tarih aralığını veya sorunun
@@ -479,6 +676,13 @@ ve NET bir yanıt yaz. KURALLAR:
 1. SADECE yukarıda verilen sayıları kullan. YENİ SAYI UYDURMA. Parasal
    değerleri HER ZAMAN "$" işareti ve binlik ayracıyla yaz (örnek DOĞRU:
    "$476,980.43", örnek YANLIŞ: "476980.4345" ham hâliyle).
+   KRİTİK UYARI: Sayının ONDALIK KISMINI (nokta sonrası rakamları) ASLA
+   bir binlik grup gibi YORUMLAMA. Örnek: JSON'da "8.329382" görürsen,
+   bu SADECE "$8.33"tür (sekiz dolar otuz üç sent) -- "$8,329.38" GİBİ
+   1000 KAT BÜYÜK bir sayıya ASLA dönüştürme. Ondalık nokta ile binlik
+   ayracını (virgül) KARIŞTIRMA: sayı KAÇ basamaklı olursa olsun, nokta
+   SONRASI kısım her zaman sadece 2 basamağa (cent'e) yuvarlanır, ondan
+   fazlası asla yeni bir basamak grubu oluşturmaz.
 2. SADECE JSON'daki alan adlarını referans al. Veride olmayan bir
    metriği (CPU, Memory, Usage % vb.) ASLA varmış gibi kullanma.
 3. KRİTİK KURAL: Sonuçta BİRDEN FAZLA satır varsa VE bunlar TOPLANMIŞ/

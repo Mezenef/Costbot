@@ -93,6 +93,8 @@ def _request_cost_details_report(access_token: str, subscription_id: str, start_
                 poll_resp.raise_for_status()
             raise TimeoutError("Rapor üretimi zaman aşımına uğradı (30 deneme sonunda hâlâ hazır değil).")
 
+        if resp.status_code >= 400:
+            print(f"[azure_cost_fetcher] Azure HATA detayı (HTTP {resp.status_code}): {resp.text}")
         resp.raise_for_status()
 
     raise RuntimeError("Azure Cost Management API'si tekrarlanan 429 (hız sınırı) hatası verdi -- lütfen birkaç dakika sonra tekrar deneyin.")
@@ -192,7 +194,12 @@ def fetch_azure_cost_rows_range(tenant_id: str, client_id: str, client_secret: s
     access_token = _get_access_token(tenant_id, client_id, client_secret)
 
     all_rows = []
-    current = date.fromisoformat(start_date).replace(day=1)
+    # NOT: İlk ay için verilen start_date'in TAM GÜNÜ kullanılır (ay başına
+    # yuvarlanmaz) -- aksi hâlde Azure'un "en fazla 13 ay geriye" sınırına
+    # takılan bir tarih, ay başına yuvarlanarak yanlışlıkla sınırın DIŞINA
+    # çıkıyordu (kullanıcı testinde bulunan gerçek hata). Sonraki aylar
+    # zaten normal şekilde ay başından devam eder.
+    current = date.fromisoformat(start_date)
     end = date.fromisoformat(end_date)
 
     while current <= end:

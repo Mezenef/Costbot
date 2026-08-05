@@ -16,6 +16,7 @@ import csv
 from pathlib import Path
 import psycopg2
 import psycopg2.extras
+from decimal import Decimal
 
 CSV_PATH = Path(__file__).parent.parent / "data" / "azure_cost_mock_data.csv"
 
@@ -57,7 +58,10 @@ CREATE TABLE IF NOT EXISTS CostRecommendations (
     PotentialSavings REAL,
     Currency TEXT,
     Status TEXT DEFAULT 'Beklemede',
-    ActionDate TEXT
+    ActionDate TEXT,
+    SkuChange TEXT,
+    EstimatedDowntime TEXT,
+    ImpactSummary TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ChatHistory (
@@ -107,8 +111,34 @@ CLOUDCOSTS_COLUMNS = [
 
 
 def _translate(sql: str) -> str:
-    """SQLite'ın '?' placeholder'ını PostgreSQL'in '%s' formatına çevirir."""
-    return sql.replace("?", "%s")
+    """SQLite'ın '?' placeholder'ını PostgreSQL'in '%s' formatına çevirir.
+
+    KRİTİK SIRALAMA: Önce SQL'in kendi içindeki '%' karakterlerini (ör.
+    LIKE '%pratis%' gibi wildcard'ları) '%%' ile KAÇIRIYORUZ, SONRA '?'
+    işaretlerini '%s'e çeviriyoruz. Sıra tersine çevrilirse, kendi
+    eklediğimiz '%s' işaretleri de kaçırılmış olur ve bozulur. Bu
+    olmadan, LIKE ifadesi içeren HERHANGİ bir SQL, psycopg2 tarafından
+    '%p'/'%r' gibi geçersiz bir format belirteci sanılıp "tuple index
+    out of range" hatasına yol açıyordu (kullanıcı testinde bulunan
+    gerçek, tekrarlanan bir hata)."""
+    escaped = sql.replace("%", "%%")
+    return escaped.replace("?", "%s")
+
+
+
+
+
+def _convert_decimals(row):
+    """PostgreSQL'in NUMERIC/DECIMAL tipini (ör. ROUND(...)::numeric),
+    psycopg2 Python'a decimal.Decimal olarak aktarır -- ama Python'un
+    json.dumps() fonksiyonu bu tipi TANIMAZ, "Object of type Decimal is
+    not JSON serializable" hatasına yol açar. Veritabanından gelen HER
+    satırdaki Decimal değerleri, kaynakta (burada) float'a çevirerek bu
+    sorunu KÖKÜNDEN çözüyoruz -- agent'ın/frontend'in JSON'a çevirdiği
+    hiçbir veri artık Decimal içermeyecek."""
+    if row is None:
+        return None
+    return {k: (float(v) if isinstance(v, Decimal) else v) for k, v in row.items()}
 
 
 class PGCursor:
@@ -125,10 +155,10 @@ class PGCursor:
         return self
 
     def fetchall(self):
-        return self._cur.fetchall()
+        return [_convert_decimals(row) for row in self._cur.fetchall()]
 
     def fetchone(self):
-        return self._cur.fetchone()
+        return _convert_decimals(self._cur.fetchone())
 
 
 class PGConnection:
@@ -190,7 +220,7 @@ def load_csv(conn: PGConnection, csv_path: Path = CSV_PATH) -> dict:
     cur.execute("DELETE FROM CloudCosts")
 
     inserted, skipped = 0, []
-    placeholders = ",".join(["%s"] * len(CLOUDCOSTS_COLUMNS))
+    placeholders = ",".join(["?"] * len(CLOUDCOSTS_COLUMNS))
     insert_sql = f"INSERT INTO CloudCosts ({','.join(CLOUDCOSTS_COLUMNS)}) VALUES ({placeholders})"
 
     BATCH_SIZE = 20_000
@@ -234,7 +264,7 @@ def load_from_azure(conn: PGConnection, rows: list, start_date: str = None, end_
     else:
         cur.execute("DELETE FROM CloudCosts")
 
-    placeholders = ",".join(["%s"] * len(CLOUDCOSTS_COLUMNS))
+    placeholders = ",".join(["?"] * len(CLOUDCOSTS_COLUMNS))
     insert_sql = f"INSERT INTO CloudCosts ({','.join(CLOUDCOSTS_COLUMNS)}) VALUES ({placeholders})"
 
     batch = [[row.get(col, "") for col in CLOUDCOSTS_COLUMNS] for row in rows]

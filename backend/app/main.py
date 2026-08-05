@@ -45,12 +45,15 @@ DB_PATH = Path(__file__).parent.parent / "data" / "costbot.db"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Uygulama açılışında veritabanı yoksa otomatik kur (DoD: "CSV → SQLite otomatik yükleme")
-    if not DB_PATH.exists():
-        stats = build_database(csv_path=WORKING_CSV)
-        print(f"[startup] Veritabanı kuruldu: {stats['inserted']} satır, {stats['skipped']} atlandı")
-    else:
-        print(f"[startup] Mevcut veritabanı kullanılıyor: {DB_PATH}")
+    # PostgreSQL'e geçiş sonrası: DB_PATH (eski SQLite yolu) artık anlamsız --
+    # her başlangıçta şemayı garanti altına alıyoruz. init_schema() içindeki
+    # "CREATE TABLE IF NOT EXISTS" ifadeleri sayesinde bu işlem GÜVENLİ ve
+    # TEKRARLANABİLİR -- tablo zaten varsa hiçbir şeyi bozmaz/silmez.
+    from .database import get_connection, init_schema
+    conn = get_connection()
+    init_schema(conn)
+    conn.close()
+    print("[startup] Veritabanı şeması doğrulandı/oluşturuldu.")
 
     start_scheduler()
 
@@ -111,6 +114,9 @@ class RecommendationOut(BaseModel):
     Currency: str | None
     Status: str
     ActionDate: str | None
+    SkuChange: str | None = None
+    EstimatedDowntime: str | None = None
+    ImpactSummary: str | None = None
 
 
 class RecommendationStatusUpdate(BaseModel):
@@ -201,6 +207,17 @@ def health():
 def dashboard_summary(language: str = "tr", user_id: int | None = None):
     return dashboard.get_dashboard_summary(language=language, user_id=user_id)
 
+
+@app.get("/dashboard/period-summary")
+def dashboard_period_summary(timeframe: str = "30d", language: str = "tr", user_id: int | None = None):
+    """Dashboard'daki zaman aralığı dropdown'ı için endpoint.
+    timeframe: "daily" | "30d" | "3m" | "6m" | "12m" | "all" """
+    allowed = {"daily", "30d", "3m", "6m", "12m", "all"}
+    if timeframe not in allowed:
+        raise HTTPException(status_code=400, detail=f"Geçersiz timeframe. İzin verilenler: {', '.join(sorted(allowed))}")
+    return dashboard.get_period_summary(timeframe=timeframe, language=language, user_id=user_id)
+
+
 @app.post("/alerts/send-email")
 def send_alert_email(body: SendAlertRequest):
     conn = get_connection()
@@ -209,7 +226,7 @@ def send_alert_email(body: SendAlertRequest):
         conn.close()
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
 
-    summary = dashboard.get_dashboard_summary(language=body.language, user_id=body.user_id)
+    summary = dashboard.get_period_summary(timeframe="30d", language=body.language, user_id=body.user_id)
     spikes = summary["cost_spikes"]
     if body.service_name:
         spikes = [s for s in spikes if s["service_name"] == body.service_name]
@@ -234,7 +251,6 @@ def send_alert_email(body: SendAlertRequest):
 
 
 @app.post("/alerts/send-teams")
-@app.post("/alerts/send-teams")
 def send_teams_alert(body: SendTeamsAlertRequest):
     conn = get_connection()
     user_row = conn.execute(
@@ -245,7 +261,7 @@ def send_teams_alert(body: SendTeamsAlertRequest):
         raise HTTPException(status_code=400, detail="Teams webhook adresiniz tanımlı değil. Lütfen Ayarlar sayfasından ekleyin.")
     webhook_url = user_row["TeamsWebhookUrl"]
 
-    summary = dashboard.get_dashboard_summary(language=body.language, user_id=body.user_id)
+    summary = dashboard.get_period_summary(timeframe="30d", language=body.language, user_id=body.user_id)
     spikes = summary["cost_spikes"]
     if body.service_name:
         spikes = [s for s in spikes if s["service_name"] == body.service_name]
@@ -414,7 +430,9 @@ _REC_COLUMNS_SQL = (
     'RecommendationId AS "RecommendationId", CreatedDate AS "CreatedDate", '
     'TargetService AS "TargetService", TargetResourceName AS "TargetResourceName", '
     'RecommendationText AS "RecommendationText", PotentialSavings AS "PotentialSavings", '
-    'Currency AS "Currency", Status AS "Status", ActionDate AS "ActionDate"'
+    'Currency AS "Currency", Status AS "Status", ActionDate AS "ActionDate", '
+    'SkuChange AS "SkuChange", EstimatedDowntime AS "EstimatedDowntime", '
+    'ImpactSummary AS "ImpactSummary"'
 )
 
 

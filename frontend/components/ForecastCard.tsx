@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { getCostForecast, CostForecast } from "@/lib/api";
+import { getCostForecast, formatChartDateLabel, CostForecast } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 
 function formatMoney(n: number) {
@@ -63,9 +63,9 @@ export default function ForecastCard() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={forecast.chart_data}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-300 dark:text-gray-700" opacity={0.6} />
-                  <XAxis dataKey="date" tick={{ fontSize: 9 }} />
+                  <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={formatChartDateLabel} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip formatter={(v) => (v == null ? "-" : formatMoney(Number(v)))} />
+                  <Tooltip formatter={(v) => (v == null ? "-" : formatMoney(Number(v)))} labelFormatter={formatChartDateLabel} />
                   <Line type="monotone" dataKey="actual" stroke="#2563eb" strokeWidth={2.5} dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="projected" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
                 </LineChart>

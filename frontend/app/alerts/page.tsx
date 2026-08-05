@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import Sidebar from "@/components/Sidebar";
-import { getDashboardSummary, sendAlertEmail, sendTeamsAlert, getTeamsWebhook, CostSpike } from "@/lib/api";
+import { getDashboardPeriodSummary, sendAlertEmail, sendTeamsAlert, getTeamsWebhook, CostSpike } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 
 interface StoredUser {
@@ -40,7 +40,7 @@ export default function AlertsPage() {
     const parsedUser: StoredUser | null = raw ? JSON.parse(raw) : null;
     if (parsedUser) setUser(parsedUser);
     if (parsedUser) {
-      getDashboardSummary(locale, parsedUser.user_id)
+      getDashboardPeriodSummary("30d", locale, parsedUser.user_id)
         .then((d) => setSpikes(d.cost_spikes))
         .finally(() => setLoading(false));
       getTeamsWebhook(parsedUser.user_id)

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { getServiceBreakdownByPeriod, ServiceBreakdownByPeriod } from "@/lib/api";
+import { getServiceBreakdownByPeriod, formatChartDateLabel, ServiceBreakdownByPeriod } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 
 const STACK_COLORS = ["#0e2869", "#1e40af", "#2563eb", "#3b82f6", "#93c5fd", "#e0f2fe"];
@@ -53,10 +53,11 @@ export default function MonthlyServiceChart() {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={breakdown.data} barCategoryGap="12%" margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-300 dark:text-gray-700" opacity={0.6} />
-              <XAxis dataKey="period" tick={{ fontSize: 12 }} />
+              <XAxis dataKey="period" tick={{ fontSize: 12 }} tickFormatter={formatChartDateLabel} />
               <YAxis tick={{ fontSize: 12 }} tickCount={11} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`} />
               <Tooltip
                 formatter={(v) => formatMoney(Number(v))}
+                labelFormatter={formatChartDateLabel}
                 contentStyle={{ fontSize: 11, padding: "6px 10px", borderRadius: 8 }}
                 itemStyle={{ padding: "1px 0" }}
                 labelStyle={{ fontSize: 10, marginBottom: 2 }}

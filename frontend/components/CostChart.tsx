@@ -10,9 +10,6 @@ interface CostChartProps {
   data: Record<string, unknown>[];
 }
 
-// Grafik türünü veriye bakarak otomatik seçiyoruz:
-// - Kolon adlarında "Ay"/"Tarih"/"Date" geçiyorsa -> çizgi grafik (trend)
-// - Aksi halde -> çubuk grafik (kategori karşılaştırması, ör. top-5 servis)
 function detectChartType(data: Record<string, unknown>[]): "line" | "bar" {
   if (data.length === 0) return "bar";
   const keys = Object.keys(data[0]).map((k) => k.toLowerCase());
@@ -20,7 +17,6 @@ function detectChartType(data: Record<string, unknown>[]): "line" | "bar" {
   return hasTimeKey ? "line" : "bar";
 }
 
-// İlk kolonu eksen (kategori/tarih), ilk sayısal kolonu değer olarak kullan.
 function detectAxisKeys(data: Record<string, unknown>[]): { xKey: string; yKey: string } | null {
   if (data.length === 0) return null;
   const keys = Object.keys(data[0]);
@@ -29,6 +25,11 @@ function detectAxisKeys(data: Record<string, unknown>[]): { xKey: string; yKey: 
   return { xKey, yKey };
 }
 
+// Çok sayıda kategori (ör. 29 servis) varsa, dikey etiketler yerine
+// yatay çubuklu bir düzene geçiyoruz -- bu sayıda kategori, X eksenine
+// hiçbir açıyla okunaklı sığmıyor.
+const MANY_CATEGORIES_THRESHOLD = 10;
+
 export default function CostChart({ data }: CostChartProps) {
   if (!data || data.length === 0) return null;
 
@@ -36,9 +37,17 @@ export default function CostChart({ data }: CostChartProps) {
   if (!axisKeys) return null;
   const { xKey, yKey } = axisKeys;
   const chartType = detectChartType(data);
+  const isManyCategories = chartType === "bar" && data.length > MANY_CATEGORIES_THRESHOLD;
+
+  const containerHeight = isManyCategories
+    ? Math.max(288, data.length * 26)
+    : 288;
 
   return (
-    <div className="w-full h-72 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 my-2">
+    <div
+      className="w-full bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 my-2"
+      style={{ height: containerHeight }}
+    >
       <ResponsiveContainer width="100%" height="100%">
         {chartType === "line" ? (
           <LineChart data={data}>
@@ -48,6 +57,14 @@ export default function CostChart({ data }: CostChartProps) {
             <Tooltip />
             <Line type="monotone" dataKey={yKey} stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
           </LineChart>
+        ) : isManyCategories ? (
+          <BarChart data={data} layout="vertical" margin={{ left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+            <XAxis type="number" tick={{ fontSize: 11 }} />
+            <YAxis type="category" dataKey={xKey} tick={{ fontSize: 10 }} width={140} interval={0} />
+            <Tooltip />
+            <Bar dataKey={yKey} fill="#2563eb" radius={[0, 4, 4, 0]} />
+          </BarChart>
         ) : (
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eee" />

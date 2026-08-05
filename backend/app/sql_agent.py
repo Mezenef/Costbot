@@ -18,6 +18,22 @@ PostgreSQL'e geçiş notu: 'except sqlite3.Error' blokları 'except
 Exception' yapıldı -- artık psycopg2 kullanıldığı için sqlite3.Error
 hiçbir zaman eşleşmiyordu, bu da SQL hata-düzeltme (retry) mekanizmasını
 sessizce devre dışı bırakıyordu.
+
+Hata ayıklama notu: validate_sql() bir sorguyu REDDETTİĞİNDE, reddedilen
+SQL artık terminale (print ile) yazdırılıyor -- daha önce bu bilgi hiçbir
+yere loglanmıyordu, "izin verilmeyen anahtar kelime" gibi hatalarda
+GERÇEKTEN hangi SQL'in reddedildiğini görmek imkansızdı.
+
+Geçici hata ayıklama notu (context sorunu): ask_stream() fonksiyonunun
+başına, LLM'e giden previous_answer parametresinin GERÇEK içeriğini
+terminale yazdıran bir debug satırı eklendi -- "boş bağlam sonrası
+eksik-koşullu soru" senaryosunda, sorunun frontend'den gelen bağlamda mı
+yoksa LLM'in talimata uymamasında mı olduğunu kesin olarak ayırt etmek
+için. Teşhis tamamlanınca bu satır kaldırılabilir.
+
+v4 -- generate_recommendation(), artık öneri üretirken LLM'den gelen
+SkuChange/EstimatedDowntime/ImpactSummary alanlarını da CostRecommendations
+tablosuna yazıyor (bkz. prompts.py'deki RECOMMENDATION_PROMPT güncellemesi).
 """
 import re
 import time
@@ -94,6 +110,16 @@ def _try_compute_grand_total(sql: str) -> Optional[float]:
     return None
 
 
+def _mask_string_literals(sql: str) -> str:
+    """SQL'deki tek tırnaklı string literal'lerin İÇERİĞİNİ maskeler --
+    bu olmadan, 'Azure Update Manager' gibi İÇİNDE bir SQL anahtar
+    kelimesi (UPDATE) geçen GERÇEK bir servis/veri adı, yanlışlıkla
+    tehlikeli bir komut sanılıp sorgu reddediliyordu (kullanıcı testinde
+    bulunan gerçek hata -- 'Hangi servisler hiç kullanılmıyor?' sorusu,
+    listede 'Azure Update Manager' geçtiği için hep reddediliyordu)."""
+    return re.sub(r"'(?:[^'\\]|\\.)*'", "''", sql)
+
+
 def validate_sql(sql: str) -> Optional[str]:
     """
     SQL'i çalıştırmadan önce doğrular. Sorun varsa hata mesajı, yoksa None döner.
@@ -103,14 +129,22 @@ def validate_sql(sql: str) -> Optional[str]:
         return "Boş SQL üretildi."
     if not re.match(r"^\s*(SELECT|WITH)\b", stripped, re.IGNORECASE):
         return "Yalnızca SELECT (veya WITH ... SELECT) sorgularına izin veriliyor."
-    if FORBIDDEN_KEYWORDS.search(stripped):
+    if FORBIDDEN_KEYWORDS.search(_mask_string_literals(stripped)):
         return "Sorgu izin verilmeyen bir anahtar kelime içeriyor (yalnızca okuma yapılabilir)."
     if ";" in stripped:
         return "Birden fazla ifade (çoklu ; ) içeren sorgulara izin verilmiyor."
 
     cte_names = set(re.findall(r"(?:\bWITH\s+|,\s*)([A-Za-z_][A-Za-z0-9_]*)\s+AS\s*\(", stripped, re.IGNORECASE))
 
-    used_tables = re.findall(r"\bFROM\s+([A-Za-z_]+)|\bJOIN\s+([A-Za-z_]+)", stripped, re.IGNORECASE)
+    # EXTRACT(alan FROM kaynak) gibi ifadeler, "FROM" kelimesini bir TABLO
+    # belirteci gibi değil, kendi sözdizimi gereği kullanır -- bu maskeleme
+    # olmadan, EXTRACT(DOW FROM UsageDate::date) ifadesindeki "UsageDate"
+    # (ya da bir alias kullanılmışsa "cc" gibi) yanlışlıkla bilinmeyen bir
+    # tablo adı sanılıp sorgu reddediliyordu (kullanıcı testinde bulunan
+    # gerçek hata -- hafta sonu/hafta içi karşılaştırma sorusu).
+    sql_for_table_check = re.sub(r"EXTRACT\s*\([^)]*\)", "EXTRACT_MASKED", stripped, flags=re.IGNORECASE)
+
+    used_tables = re.findall(r"\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)|\bJOIN\s+([A-Za-z_][A-Za-z0-9_]*)", sql_for_table_check, re.IGNORECASE)
     flat = {t for pair in used_tables for t in pair if t}
     unknown = flat - set(ALLOWED_TABLES.keys()) - cte_names
     if unknown:
@@ -308,6 +342,7 @@ def ask(question: str, session_id: str = "default", max_retries: int = 1, langua
 
         problem = validate_sql(sql)
         if problem:
+            print(f"[sql_agent] SQL DOĞRULAMA REDDETTİ: {problem}\n[sql_agent] Reddedilen SQL: {sql}")
             last_error = problem
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": f"Sorgu geçersiz: {problem}. Lütfen düzelt."})
@@ -633,7 +668,10 @@ def _log_chat_history(session_id: str, question: str, sql: str, result: AgentRes
 
 def generate_recommendation(rows: list[dict], language: str = "tr", user_id: Optional[int] = None) -> list[dict]:
     """Atıl kaynak satırlarını LLM'e yorumlatıp CostRecommendations'a yazılacak
-    öneri listesini üretir."""
+    öneri listesini üretir. Artık PotentialSavings'e ek olarak SkuChange,
+    EstimatedDowntime, ImpactSummary alanlarını da (varsa) veritabanına yazar --
+    bunlar "bu öneriyi uygularsam ne olur" sorusuna kaba bir TAHMİN sunar,
+    gerçek Azure ölçümü değildir (bkz. prompts.py RECOMMENDATION_PROMPT)."""
     llm = get_llm()
     labels = RECOMMENDATION_LABELS.get(language, RECOMMENDATION_LABELS["tr"])
     prompt = RECOMMENDATION_PROMPT.format(
@@ -658,10 +696,12 @@ def generate_recommendation(rows: list[dict], language: str = "tr", user_id: Opt
     for r in recs:
         conn.execute(
             "INSERT INTO CostRecommendations "
-            "(UserId, TargetService, TargetResourceName, RecommendationText, PotentialSavings, Currency, Status) "
-            "VALUES (?, ?, ?, ?, ?, 'USD', 'Beklemede')",
+            "(UserId, TargetService, TargetResourceName, RecommendationText, PotentialSavings, "
+            "Currency, Status, SkuChange, EstimatedDowntime, ImpactSummary) "
+            "VALUES (?, ?, ?, ?, ?, 'USD', 'Beklemede', ?, ?, ?)",
             (user_id, r.get("TargetService"), r.get("TargetResourceName"),
-             r.get("RecommendationText"), r.get("PotentialSavings", 0)),
+             r.get("RecommendationText"), r.get("PotentialSavings", 0),
+             r.get("SkuChange"), r.get("EstimatedDowntime"), r.get("ImpactSummary")),
         )
     conn.commit()
     conn.close()
@@ -733,6 +773,7 @@ def ask_stream(question: str, session_id: str = "default", max_retries: int = 1,
         return
 
     schema_text = get_schema_prompt()
+    print(f"[DEBUG] previous_answer parametresi: {repr(previous_answer)[:500]}")
     messages = build_prompt(schema_text, question, language=language, previous_answer=previous_answer)
 
     sql = None
@@ -782,6 +823,7 @@ def ask_stream(question: str, session_id: str = "default", max_retries: int = 1,
 
         problem = validate_sql(sql)
         if problem:
+            print(f"[sql_agent] SQL DOĞRULAMA REDDETTİ: {problem}\n[sql_agent] Reddedilen SQL: {sql}")
             last_error = problem
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": f"Sorgu geçersiz: {problem}. Lütfen düzelt."})

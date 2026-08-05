@@ -4,9 +4,21 @@ Saatte bir çalışan arka plan görevi -- yeni bir maliyet artışı (spike)
 tespit edilince otomatik olarak e-posta + Teams bildirimi gönderir.
 Aynı artış için TEKRAR bildirim GÖNDERMEZ (AlertHistory tablosunda
 kaydı tutuluyor, ServiceName+Period eşsiz anahtar).
+
+Başlangıç senkronizasyonu notu: start_scheduler() artık _daily_job()'u
+sadece "sync_hours saat sonra" değil, backend her başladığında da HEMEN
+(next_run_time=datetime.now()) bir kez tetikliyor -- bu, APScheduler'ın
+KENDİ arka plan iş parçacığında çalıştığı için FastAPI'nin başlangıcını
+BLOKLAMAZ (API hemen kullanılabilir olur, senkronizasyon arka planda
+ilerler). Aksi hâlde, geliştirme sırasında backend sık sık yeniden
+başlatıldığında (ör. kod değişikliği sonrası), 24 saatlik sayaç hiç
+dolma fırsatı bulamıyor, veri günlerce eskiyebiliyordu (kullanıcı
+testinde bulunan gerçek durum -- Dashboard'daki "Bugünkü Maliyet"
+kartı, gerçek bugünün 1 gün gerisinde kalmıştı).
 """
 import os
 import logging
+from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .database import get_connection
@@ -190,6 +202,12 @@ def start_scheduler() -> None:
     _scheduler = BackgroundScheduler()
 
     sync_hours = int(os.getenv("AZURE_SYNC_INTERVAL_HOURS", "24"))
+    # NOT: "next_run_time=datetime.now()" (backend her başladığında hemen
+    # senkronize etme) GERİ ALINDI -- geliştirme sırasında kod üzerinde
+    # sık değişiklik yapılırken, her backend yeniden başlatmasında Azure'a
+    # istek gitmesi, hız sınırına (429) daha sık takılmaya neden oluyordu.
+    # Şimdilik normal "interval" davranışına dönüldü: ilk çalıştırma,
+    # backend açıldıktan "sync_hours" saat SONRA gerçekleşir.
     _scheduler.add_job(_daily_job, "interval", hours=sync_hours)
 
     _scheduler.start()

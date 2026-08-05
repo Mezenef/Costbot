@@ -130,10 +130,14 @@ export interface DashboardSummary {
   current_month: string | null;
   previous_month: string | null;
   total_cost: number;
+  previous_total: number | null;
+  delta_amount: number | null;
   cost_change_pct: number | null;
   potential_savings: number;
   pending_recommendations: number;
   resource_count: number;
+  today_cost: number;
+  today_date: string | null;
   trend: { month: string; total: number }[];
   service_breakdown: { name: string; total: number; pct: number }[];
   top_resource_groups: {
@@ -150,6 +154,20 @@ export async function getDashboardSummary(language: string = "tr", userId?: numb
   if (!res.ok) throw new Error("Dashboard verisi alınamadı.");
   return res.json();
 }
+
+export type DashboardTimeframe = "daily" | "30d" | "3m" | "6m" | "12m" | "all";
+
+export async function getDashboardPeriodSummary(
+  timeframe: DashboardTimeframe,
+  language: string = "tr",
+  userId?: number
+): Promise<DashboardSummary> {
+  const res = await fetch(
+    `${API_URL}/dashboard/period-summary?timeframe=${timeframe}&language=${language}&user_id=${userId ?? ""}`
+  );
+  if (!res.ok) throw new Error("Dashboard verisi alınamadı.");
+  return res.json();
+}
 export interface Recommendation {
   RecommendationId: number;
   CreatedDate: string;
@@ -160,6 +178,9 @@ export interface Recommendation {
   Currency: string | null;
   Status: "Beklemede" | "Uygulandı" | "Reddedildi";
   ActionDate: string | null;
+  SkuChange: string | null;
+  EstimatedDowntime: string | null;
+  ImpactSummary: string | null;
 }
 
 export async function getRecommendations(userId: number, status?: string): Promise<Recommendation[]> {
@@ -460,4 +481,41 @@ export async function updateTeamsWebhook(userId: number, webhookUrl: string | nu
     throw new Error(err.detail || "Teams webhook güncellenemedi.");
   }
   return res.json();
+}
+
+// Backend'den gelen tarihler ISO formatında (YYYY-MM-DD) geliyor --
+// bu fonksiyon, ekranda göstermek için DD-MM-YYYY formatına çevirir.
+export function formatDateDMY(isoDate: string | null | undefined): string {
+  if (!isoDate) return "—";
+  const parts = isoDate.split("-");
+  if (parts.length !== 3) return isoDate;
+  const [y, m, d] = parts;
+  return `${d}-${m}-${y}`;
+}
+// Grafiklerdeki X ekseni etiketleri backend'den bazen "YYYY-MM" (ay
+// bazlı, uzun dönemlerde), bazen "YYYY-MM-DD" (gün bazlı, kısa
+// dönemlerde) geliyor -- bu fonksiyon ikisini de doğru şekilde
+// DD-MM-YYYY / MM-YYYY formatına çevirir.
+export function formatChartDateLabel(raw: string): string {
+  if (!raw) return raw;
+  // Hafta formatı (ör. backend'den gelen "2026-W31") -- yıl-hafta
+  // sırasını hafta-yıl olarak çevirir: "W31-2026".
+  if (raw.includes("W")) {
+    const weekParts = raw.split("-");
+    if (weekParts.length === 2) {
+      const [y, w] = weekParts;
+      return `${w}-${y}`;
+    }
+    return raw;
+  }
+  const parts = raw.split("-");
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d}-${m}-${y}`;
+  }
+  if (parts.length === 2) {
+    const [y, m] = parts;
+    return `${m}-${y}`;
+  }
+  return raw;
 }

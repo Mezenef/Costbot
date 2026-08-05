@@ -37,6 +37,52 @@ function formatMoney(n: number | null) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Etki analizi bölümü -- "bu öneriyi uygularsam ne olur" sorusuna kaba
+// bir ön fikir verir. TAHMİNİDİR, gerçek Azure ölçümü DEĞİLDİR --
+// bu yüzden her zaman küçük bir uyarı notuyla birlikte gösterilir.
+function ImpactAnalysis({ rec, t }: { rec: Recommendation; t: (k: string) => string }) {
+  const [open, setOpen] = useState(false);
+  const hasImpactData = rec.SkuChange || rec.EstimatedDowntime || rec.ImpactSummary;
+  if (!hasImpactData) return null;
+
+  return (
+    <div className="pl-6 mt-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+      >
+        {open ? "▾" : "▸"} {t("recs.whatIf")}
+      </button>
+      {open && (
+        <div className="mt-2 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 rounded-xl p-3 space-y-2">
+          {rec.SkuChange && (
+            <div className="text-[11px]">
+              <span className="font-medium text-gray-500 dark:text-gray-400">{t("recs.skuChange")}: </span>
+              <span className="text-gray-700 dark:text-gray-300">{rec.SkuChange}</span>
+            </div>
+          )}
+          {rec.EstimatedDowntime && (
+            <div className="text-[11px]">
+              <span className="font-medium text-gray-500 dark:text-gray-400">{t("recs.estimatedDowntime")}: </span>
+              <span className="text-gray-700 dark:text-gray-300">{rec.EstimatedDowntime}</span>
+            </div>
+          )}
+          {rec.ImpactSummary && (
+            <div className="text-[11px] text-gray-700 dark:text-gray-300 leading-relaxed space-y-1">
+              {rec.ImpactSummary.split("\n").filter(Boolean).map((line, i) => (
+                <div key={i}>{line}</div>
+              ))}
+            </div>
+          )}
+          <div className="text-[10px] text-gray-400 dark:text-gray-500 italic pt-1 border-t border-gray-200 dark:border-gray-700">
+            {t("recs.impactDisclaimer")}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RecommendationsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -255,7 +301,7 @@ export default function RecommendationsPage() {
             </div>
           )}
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-2 gap-4 items-start">
             {visibleRecs.map((r) => (
               <div
                 key={r.RecommendationId}
@@ -290,7 +336,9 @@ export default function RecommendationsPage() {
 
                 <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed mb-3 pl-6">{r.RecommendationText}</p>
 
-                <div className="flex items-center justify-between pl-6">
+                <ImpactAnalysis rec={r} t={t} />
+
+                <div className="flex items-center justify-between pl-6 mt-3">
                   <div className="text-sm font-bold text-green-600 dark:text-green-400">
                     {formatMoney(r.PotentialSavings)} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">{t("recs.savings")}</span>
                   </div>

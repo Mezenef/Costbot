@@ -463,11 +463,36 @@ def _get_recommendations(user_id=None, limit=8):
 
 # ============================== ANA URETIM ==============================
 
+# NOT: get_period_summary()'nin parametre adı "granularity" iken
+# Dashboard'daki zaman aralığı özelliği eklenirken "timeframe" olarak
+# değiştirildi (dashboard.py). Reports sayfasındaki granularity
+# değerleri ("day"/"week"/"month" gibi), yeni "daily"/"30d"/"3m" vb.
+# timeframe sözlüğüyle BİREBİR uyuşmuyor -- bu yüzden burada bir
+# eşleme (mapping) yapıyoruz.
+_GRANULARITY_TO_TIMEFRAME = {
+    "day": "daily",
+    "week": "30d",
+    "month": "30d",
+}
+
+
 def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: str = None) -> bytes:
     L = LABELS.get(language, LABELS["tr"])
     if granularity:
         from .dashboard import get_period_summary
-        data = get_period_summary(granularity=granularity, language=language, user_id=user_id)
+        timeframe = _GRANULARITY_TO_TIMEFRAME.get(granularity, "30d")
+        data = get_period_summary(timeframe=timeframe, language=language, user_id=user_id)
+        # "Günlük" (day -> daily) seçiliyken, ana kartlar (Toplam Maliyet
+        # vb.) TEK GÜNÜ gösterir -- ama Trend grafiği tek noktayla
+        # anlamsız kalır ve render_story'deki "len(trend) >= 2" koşuluna
+        # takılıp TAMAMEN BOŞ görünürdü (kullanıcı testinde bulunan
+        # gerçek hata). Bu yüzden SADECE trend grafiği için, ayrıca son
+        # 7 günü çekip data["trend"]'i onunla değiştiriyoruz -- diğer
+        # tüm kartlar (toplam maliyet, tasarruf vb.) hâlâ "günlük" veriyi
+        # gösterir, sadece trend paneli çok noktalı hâle gelir.
+        if granularity == "day":
+            weekly_data = get_period_summary(timeframe="30d", language=language, user_id=user_id)
+            data["trend"] = weekly_data["trend"][-7:]
     else:
         data = get_dashboard_summary(language=language, user_id=user_id)
     recs = _get_recommendations(user_id=user_id)

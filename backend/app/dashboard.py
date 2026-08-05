@@ -7,7 +7,14 @@ Bu yüzden GERÇEK TABLO KOLONLARINA (ServiceName, ResourceName,
 ResourceGroup gibi) erişimler küçük harfle yapılıyor. SQL alias'ları
 zaten küçük harfle yazıldığı için (AS total, AS cnt gibi) onlara
 dokunulmadı.
+
+Zaman aralığı (timeframe) notu: get_period_summary artık dropdown'daki
+5 seçeneği (30d, 3m, 6m, 12m, all) destekliyor -- "all" seçeneğinde
+karşılaştırma dönemi olmadığı için cost_change_pct/previous_total gibi
+alanlar None döner (frontend bunu "karşılaştırma verisi yok" olarak
+göstermeli).
 """
+from datetime import date, timedelta
 from .database import get_connection
 
 _SERVICE_CATEGORY = {
@@ -31,6 +38,17 @@ _CATEGORY_EN = {
 
 _MONTH_EXPR = "TO_CHAR(UsageDate::date, 'YYYY-MM')"
 _WEEK_EXPR = "TO_CHAR(UsageDate::date, 'IYYY-\"W\"IW')"
+
+# Dropdown'daki her seçeneğin kaç güne karşılık geldiği. "all" özel
+# olarak ele alınıyor (window_days'e ihtiyacı yok, veri setinin
+# tamamını kapsar).
+_TIMEFRAME_DAYS = {
+    "daily": 1,
+    "30d": 30,
+    "3m": 90,
+    "6m": 180,
+    "12m": 365,
+}
 
 
 def _translate_category(name: str, language: str) -> str:
@@ -349,45 +367,84 @@ def get_resources(search: str = "", limit: int = 50, offset: int = 0) -> dict:
     }
 
 
-def get_period_summary(granularity: str = "month", language: str = "tr", user_id: int = None) -> dict:
+def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: int = None) -> dict:
+    """Dashboard'daki zaman aralığı dropdown'ı için ANA fonksiyon.
+
+    timeframe değerleri:
+      "30d" -> son 30 gün (dropdown: "Son 30 gün")
+      "3m"  -> son 90 gün (dropdown: "Son 3 Ay")
+      "6m"  -> son 180 gün (dropdown: "Son 6 Ay")
+      "12m" -> son 365 gün (dropdown: "Son 12 Ay")
+      "all" -> veri setindeki İLK gün ile SON gün arası (dropdown: "Tüm Zamanlar")
+
+    "all" seçeneğinde önceki bir dönemle karşılaştırma YAPILAMAZ (zaten
+    tüm veri gösteriliyor) -- bu durumda previous_total, delta_amount,
+    cost_change_pct alanları None döner; frontend bu None durumunu
+    "karşılaştırma verisi yok" olarak göstermelidir.
+
+    Ayrıca dönemden BAĞIMSIZ olarak, veri setinin en son GÜNÜNÜN
+    (today_date) toplam maliyetini (today_cost) her zaman döndürür --
+    Dashboard'daki sabit "Bugünkü Maliyet" kartı için.
+    """
     conn = get_connection()
 
     last_date_row = conn.execute("SELECT MAX(UsageDate) AS d FROM CloudCosts").fetchone()
     last_date_str = last_date_row["d"]
-    if not last_date_str:
+    first_date_row = conn.execute("SELECT MIN(UsageDate) AS d FROM CloudCosts").fetchone()
+    first_date_str = first_date_row["d"]
+
+    if not last_date_str or not first_date_str:
         conn.close()
         return {
             "current_month": None, "previous_month": None, "total_cost": 0, "previous_total": None,
             "delta_amount": None, "cost_change_pct": None, "potential_savings": 0,
-            "pending_recommendations": 0, "resource_count": 0, "trend": [],
+            "pending_recommendations": 0, "resource_count": 0, "today_cost": 0, "today_date": None,
+            "trend": [],
             "service_breakdown": [], "category_breakdown": [], "top_resource_groups": [],
             "cost_spikes": [], "insights": [],
         }
 
-    from datetime import date, timedelta
     last_date = date.fromisoformat(last_date_str)
-    window_days = {"day": 1, "week": 7, "month": 30}.get(granularity, 30)
+    first_date = date.fromisoformat(first_date_str)
 
-    current_start = (last_date - timedelta(days=window_days - 1)).isoformat()
-    current_end = last_date.isoformat()
-    previous_end_date = date.fromisoformat(current_start) - timedelta(days=1)
-    previous_start = (previous_end_date - timedelta(days=window_days - 1)).isoformat()
-    previous_end = previous_end_date.isoformat()
+    if timeframe == "all":
+        current_start = first_date.isoformat()
+        current_end = last_date.isoformat()
+        previous_start = None
+        previous_end = None
+    else:
+        window_days = _TIMEFRAME_DAYS.get(timeframe, 30)
+        current_start_date = max(first_date, last_date - timedelta(days=window_days - 1))
+        current_start = current_start_date.isoformat()
+        current_end = last_date.isoformat()
+
+        previous_end_date = current_start_date - timedelta(days=1)
+        previous_start_date = max(first_date, previous_end_date - timedelta(days=window_days - 1))
+        if previous_start_date <= previous_end_date and previous_end_date >= first_date:
+            previous_start = previous_start_date.isoformat()
+            previous_end = previous_end_date.isoformat()
+        else:
+            # Veri seti, karşılaştırma için gereken önceki pencereyi
+            # kapsamıyor (ör. "12 Ay" seçilmiş ama elimizde sadece 12 ay var)
+            previous_start = None
+            previous_end = None
 
     period_label = f"{current_start} — {current_end}"
-    previous_label = f"{previous_start} — {previous_end}"
+    previous_label = f"{previous_start} — {previous_end}" if previous_start else None
 
     def range_total(start, end):
+        if not start:
+            return None
         row = conn.execute(
             "SELECT COALESCE(SUM(PreTaxCost),0) AS t FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?",
             (start, end),
         ).fetchone()
         return row["t"]
 
-    total_cost = range_total(current_start, current_end)
+    total_cost = range_total(current_start, current_end) or 0.0
     prev_cost = range_total(previous_start, previous_end)
     cost_change_pct = ((total_cost - prev_cost) / prev_cost * 100) if prev_cost else None
-    delta_amount = round(total_cost - prev_cost, 2) if prev_cost else None
+    delta_amount = round(total_cost - prev_cost, 2) if prev_cost is not None else None
 
     rec_row = conn.execute(
         "SELECT COUNT(*) AS cnt, COALESCE(SUM(PotentialSavings),0) AS total "
@@ -399,11 +456,31 @@ def get_period_summary(granularity: str = "month", language: str = "tr", user_id
 
     resource_count = conn.execute("SELECT COUNT(DISTINCT ResourceId) AS cnt FROM CloudCosts").fetchone()["cnt"]
 
-    trend = _fetch_all(conn, """
-        SELECT UsageDate AS month, SUM(PreTaxCost) AS total
-        FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?
-        GROUP BY UsageDate ORDER BY UsageDate
-    """, (current_start, current_end))
+    # Dönemden BAĞIMSIZ: veri setinin en son GÜNÜNÜN toplam maliyeti --
+    # Dashboard'daki sabit "Bugünkü Maliyet" kartı için, dropdown'daki
+    # seçime bakılmaksızın her zaman aynı (en güncel) tek günü gösterir.
+    today_row = conn.execute(
+        "SELECT COALESCE(SUM(PreTaxCost), 0) AS t FROM CloudCosts WHERE UsageDate = ?",
+        (last_date_str,),
+    ).fetchone()
+    today_cost = today_row["t"]
+
+    # Trend grafiği: aralık 60 günden uzunsa GÜNLÜK yerine AYLIK
+    # gruplama yapılıyor -- aksi hâlde "Tüm Zamanlar" (365+ gün) trend
+    # grafiğinde yüzlerce nokta olur, okunmaz hâle gelir.
+    span_days = (date.fromisoformat(current_end) - date.fromisoformat(current_start)).days
+    if span_days > 60:
+        trend = _fetch_all(conn, f"""
+            SELECT {_MONTH_EXPR} AS month, SUM(PreTaxCost) AS total
+            FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?
+            GROUP BY month ORDER BY month
+        """, (current_start, current_end))
+    else:
+        trend = _fetch_all(conn, """
+            SELECT UsageDate AS month, SUM(PreTaxCost) AS total
+            FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?
+            GROUP BY UsageDate ORDER BY UsageDate
+        """, (current_start, current_end))
 
     service_rows = _fetch_all(conn, """
         SELECT ServiceName, SUM(PreTaxCost) AS total
@@ -427,7 +504,7 @@ def get_period_summary(granularity: str = "month", language: str = "tr", user_id
         SELECT ServiceName, SUM(PreTaxCost) AS total
         FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?
         GROUP BY ServiceName
-    """, (previous_start, previous_end))
+    """, (previous_start, previous_end)) if previous_start else []
     prev_by_service = {r["servicename"]: r["total"] for r in prev_service_rows}
 
     spikes = []
@@ -454,6 +531,8 @@ def get_period_summary(granularity: str = "month", language: str = "tr", user_id
     category_breakdown.sort(key=lambda c: c["total"], reverse=True)
 
     def group_totals(start, end):
+        if not start:
+            return {}
         rows = _fetch_all(conn, """
             SELECT ResourceGroup, SUM(PreTaxCost) AS total, COUNT(DISTINCT ResourceId) AS resource_count
             FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?
@@ -494,12 +573,14 @@ def get_period_summary(granularity: str = "month", language: str = "tr", user_id
         "current_month": period_label,
         "previous_month": previous_label,
         "total_cost": round(total_cost, 2),
-        "previous_total": round(prev_cost, 2) if prev_cost else None,
+        "previous_total": round(prev_cost, 2) if prev_cost is not None else None,
         "delta_amount": delta_amount,
         "cost_change_pct": round(cost_change_pct, 1) if cost_change_pct is not None else None,
         "potential_savings": round(potential_savings, 2),
         "pending_recommendations": pending_count,
         "resource_count": resource_count,
+        "today_cost": round(today_cost, 2),
+        "today_date": last_date_str,
         "trend": [{"month": t["month"], "total": round(t["total"], 2)} for t in trend],
         "service_breakdown": service_breakdown,
         "category_breakdown": category_breakdown,
@@ -510,8 +591,6 @@ def get_period_summary(granularity: str = "month", language: str = "tr", user_id
 
 
 def get_finops_score(language: str = "tr", user_id: int = None) -> dict:
-    from datetime import date, timedelta
-
     conn = get_connection()
     checks = []
     score = 0
@@ -520,18 +599,41 @@ def get_finops_score(language: str = "tr", user_id: int = None) -> dict:
     total_row = conn.execute("SELECT SUM(PreTaxCost) AS t FROM CloudCosts").fetchone()
     total_cost = total_row["t"] or 0
 
-    res_row = conn.execute(
-        "SELECT SUM(PreTaxCost) AS t FROM CloudCosts WHERE ServiceName = 'Reservations' OR MeterCategory = 'Reservations'"
-    ).fetchone()
-    res_cost = res_row["t"] or 0
-    res_pct = (res_cost / total_cost * 100) if total_cost else 0
+    # NOT: "Rezervasyon kullanımı" kontrolü kaldırıldı -- bu veri setinde
+    # ServiceName/MeterCategory hiçbir zaman "Reservations" olarak
+    # ETİKETLENMİYOR (kullanıcı testinde doğrulandı, eşleşme sıfır
+    # çıktı), bu yüzden bu kontrol HER ZAMAN aynı sonucu verip anlamsız
+    # bir madde hâline geliyordu. Yerine, veri setinde GERÇEKTEN test
+    # edilmiş, hem "iyi" hem "kötü" çıkabilen bir kontrol konuldu:
+    # kaç kaynağın HİÇ maliyet üretmediği (bugünkü test: %16.54).
+    zero_cost_resource_rows = conn.execute("""
+        SELECT ResourceName FROM CloudCosts
+        GROUP BY ResourceName HAVING SUM(PreTaxCost) = 0
+        ORDER BY ResourceName
+    """).fetchall()
+    zero_cost_details = [{"name": r["resourcename"], "cost": 0.0} for r in zero_cost_resource_rows]
+    zero_cost_count = len(zero_cost_details)
+
+    total_resource_row = conn.execute("SELECT COUNT(DISTINCT ResourceName) AS cnt FROM CloudCosts").fetchone()
+    total_resource_count = total_resource_row["cnt"] or 1
+    zero_cost_pct = (zero_cost_count / total_resource_count * 100) if total_resource_count else 0
 
     max_score += 20
-    if res_pct >= 5:
+    if zero_cost_pct <= 10:
         score += 20
-        checks.append({"ok": True, "label_tr": "Rezervasyon kullanımı yeterli", "label_en": "Reservation usage is adequate", "details": []})
+        checks.append({
+            "ok": True,
+            "label_tr": f"Kullanılmayan kaynak oranı düşük (%{zero_cost_pct:.0f})",
+            "label_en": f"Unused resource ratio is low (%{zero_cost_pct:.0f})",
+            "details": zero_cost_details,
+        })
     else:
-        checks.append({"ok": False, "label_tr": "Rezervasyon kullanımı düşük", "label_en": "Low reservation usage", "details": []})
+        checks.append({
+            "ok": False,
+            "label_tr": f"Kaynakların %{zero_cost_pct:.0f}'i hiç maliyet üretmiyor, gözden geçirilmeli",
+            "label_en": f"%{zero_cost_pct:.0f} of resources produce no cost, worth reviewing",
+            "details": zero_cost_details,
+        })
 
     idle_rows = conn.execute("""
         SELECT ResourceName, SUM(PreTaxCost) AS total_cost
