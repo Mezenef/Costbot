@@ -212,7 +212,7 @@ def dashboard_summary(language: str = "tr", user_id: int | None = None):
 def dashboard_period_summary(timeframe: str = "30d", language: str = "tr", user_id: int | None = None):
     """Dashboard'daki zaman aralığı dropdown'ı için endpoint.
     timeframe: "daily" | "30d" | "3m" | "6m" | "12m" | "all" """
-    allowed = {"daily", "30d", "3m", "6m", "12m", "all"}
+    allowed = {"daily", "7d", "30d", "3m", "6m", "12m", "all"}
     if timeframe not in allowed:
         raise HTTPException(status_code=400, detail=f"Geçersiz timeframe. İzin verilenler: {', '.join(sorted(allowed))}")
     return dashboard.get_period_summary(timeframe=timeframe, language=language, user_id=user_id)

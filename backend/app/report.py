@@ -83,6 +83,13 @@ LABELS = {
         "trend_sub": "Toplam maliyet (USD)",
         "distribution_title": "Maliyet Dağılımı",
         "monthly_change_title": "Aylık Değişim",
+        "monthly_change_title": "Aylık Değişim",
+        "weekly_change_title": "Haftalık Değişim",
+        "last_week_label": "Geçen Hafta",
+        "this_week_label": "Bu Hafta",
+        "daily_change_title": "Günlük Değişim",
+        "yesterday_label": "Dün",
+        "today_label": "Bugün",
         "insights_title": "Öne Çıkan İçgörüler",
         "total_cost_card": "Toplam Maliyet",
         "vs_last_month": "vs geçen ay",
@@ -126,6 +133,13 @@ LABELS = {
         "trend_sub": "Total cost (USD)",
         "distribution_title": "Cost Distribution",
         "monthly_change_title": "Monthly Change",
+        "monthly_change_title": "Monthly Change",
+        "weekly_change_title": "Weekly Change",
+        "last_week_label": "Last Week",
+        "this_week_label": "This Week",
+        "daily_change_title": "Daily Change",
+        "yesterday_label": "Yesterday",
+        "today_label": "Today",
         "insights_title": "Key Insights",
         "total_cost_card": "Total Cost",
         "vs_last_month": "vs last month",
@@ -226,9 +240,9 @@ def _make_trend_chart(trend):
     return buf
 
 
-def _make_donut_chart(category_breakdown, total_cost, L):
-    labels = [c["category"] for c in category_breakdown]
-    values = [c["total"] for c in category_breakdown]
+def _make_donut_chart(service_breakdown, total_cost, L):
+    labels = [s["name"] for s in service_breakdown]
+    values = [s["total"] for s in service_breakdown]
     colors_mpl = [DONUT_COLORS[i % len(DONUT_COLORS)].hexval() if hasattr(DONUT_COLORS[i % len(DONUT_COLORS)], "hexval")
                   else "#2563eb" for i in range(len(labels))]
     colors_mpl = ["#" + c[-6:] for c in colors_mpl]
@@ -287,9 +301,6 @@ def _cloud_illustration(w=3.6 * cm, h=2.6 * cm):
 
 def _draw_page_frame(c, doc, data, L):
     c.saveState()
-    c.setStrokeColor(BORDER)
-    c.setLineWidth(1)
-    c.rect(MARGIN * 0.5, MARGIN * 0.5, PAGE_W - MARGIN, PAGE_H - MARGIN)
 
     top_y = PAGE_H - MARGIN
 
@@ -336,9 +347,10 @@ def _draw_page_frame(c, doc, data, L):
     c.setFont(FONT_BOLD, 8.5)
     c.setFillColor(ACCENT)
     c.drawString(MARGIN, bottom_y, "CostBot")
+    costbot_width = c.stringWidth("CostBot", FONT_BOLD, 8.5)
     c.setFont(FONT, 8.5)
     c.setFillColor(MUTED)
-    c.drawString(MARGIN + 1.15 * cm, bottom_y, L["footer_sub"])
+    c.drawString(MARGIN + costbot_width + 0.35 * cm, bottom_y, L["footer_sub"])
     c.drawRightString(PAGE_W - MARGIN, bottom_y, f"{L['page_label']} {doc.page}")
 
     c.restoreState()
@@ -471,28 +483,24 @@ def _get_recommendations(user_id=None, limit=8):
 # eşleme (mapping) yapıyoruz.
 _GRANULARITY_TO_TIMEFRAME = {
     "day": "daily",
-    "week": "30d",
+    "week": "7d",    # yeni bir "son 7 gün" timeframe'i eklememiz gerekir
     "month": "30d",
 }
 
 
 def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: str = None) -> bytes:
     L = LABELS.get(language, LABELS["tr"])
+    show_period_comparison = True
     if granularity:
         from .dashboard import get_period_summary
         timeframe = _GRANULARITY_TO_TIMEFRAME.get(granularity, "30d")
         data = get_period_summary(timeframe=timeframe, language=language, user_id=user_id)
-        # "Günlük" (day -> daily) seçiliyken, ana kartlar (Toplam Maliyet
-        # vb.) TEK GÜNÜ gösterir -- ama Trend grafiği tek noktayla
-        # anlamsız kalır ve render_story'deki "len(trend) >= 2" koşuluna
-        # takılıp TAMAMEN BOŞ görünürdü (kullanıcı testinde bulunan
-        # gerçek hata). Bu yüzden SADECE trend grafiği için, ayrıca son
-        # 7 günü çekip data["trend"]'i onunla değiştiriyoruz -- diğer
-        # tüm kartlar (toplam maliyet, tasarruf vb.) hâlâ "günlük" veriyi
-        # gösterir, sadece trend paneli çok noktalı hâle gelir.
         if granularity == "day":
-            weekly_data = get_period_summary(timeframe="30d", language=language, user_id=user_id)
-            data["trend"] = weekly_data["trend"][-7:]
+            # "Maliyet Trendi" grafiği, günlük raporda TEK NOKTAYLA
+            # (tek gün) anlamsız kalacağı için ayrıca son 7 günün
+            # trendini çekip data["trend"]'i onunla değiştiriyoruz.
+            weekly_data = get_period_summary(timeframe="7d", language=language, user_id=user_id)
+            data["trend"] = weekly_data["trend"]
     else:
         data = get_dashboard_summary(language=language, user_id=user_id)
     recs = _get_recommendations(user_id=user_id)
@@ -611,15 +619,15 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
 
     # ---- Donut + Aylik Degisim + Icgoruler (3 sutun) ----
     donut_cell = [_panel_title("◔", PURPLE, L["distribution_title"], styles, language, text_w=5.5 * cm), Spacer(1, 4)]
-    if data["category_breakdown"]:
-        donut_img = Image(_make_donut_chart(data["category_breakdown"], data["total_cost"], L), width=2.5 * cm, height=2.5 * cm)
+    if data["service_breakdown"]:
+        donut_img = Image(_make_donut_chart(data["service_breakdown"], data["total_cost"], L), width=2.5 * cm, height=2.5 * cm)
         legend_rows = []
-        for i, c in enumerate(data["category_breakdown"]):
+        for i, s in enumerate(data["service_breakdown"]):
             dot_color = DONUT_COLORS[i % len(DONUT_COLORS)]
             dot = Drawing(0.3 * cm, 0.3 * cm)
             dot.add(Circle(0.15 * cm, 0.15 * cm, 0.15 * cm, fillColor=dot_color, strokeColor=None))
-            legend_rows.append([dot, Paragraph(c["category"], styles["LegendItem"]),
-                                 Paragraph(f"%{c['pct']:.0f}", ParagraphStyle(name="pct", fontSize=7.6, fontName=FONT_BOLD, textColor=NAVY, alignment=2))])
+            legend_rows.append([dot, Paragraph(s["name"], styles["LegendItem"]),
+                                 Paragraph(f"%{s['pct']:.0f}", ParagraphStyle(name="pct", fontSize=7.6, fontName=FONT_BOLD, textColor=NAVY, alignment=2))])
         legend_table = Table(legend_rows, colWidths=[0.35 * cm, 2.15 * cm, 1.0 * cm])
         legend_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -630,12 +638,29 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
         donut_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
         donut_cell.append(donut_row)
 
-    compare_cell = [_panel_title("▦", TEAL, L["monthly_change_title"], styles, language, text_w=3.7 * cm), Spacer(1, 8)]
-    if data["previous_total"] is not None:
+    # Panel başlığı ve etiketleri, seçilen granülariteye göre değişir --
+    # "Haftalık" raporda "Aylık Değişim / Geçen Ay / Bu Ay" gibi yanlış/
+    # sabit etiketler göstermek yerine, gerçek dönemi (hafta) yansıtan
+    # etiketler kullanılır.
+    if granularity == "day":
+        change_panel_title = L["daily_change_title"]
+        prev_period_label = L["yesterday_label"]
+        curr_period_label = L["today_label"]
+    elif granularity == "week":
+        change_panel_title = L["weekly_change_title"]
+        prev_period_label = L["last_week_label"]
+        curr_period_label = L["this_week_label"]
+    else:
+        change_panel_title = L["monthly_change_title"]
+        prev_period_label = L["last_month_label"]
+        curr_period_label = L["this_month_label"]
+
+    compare_cell = [_panel_title("▦", TEAL, change_panel_title, styles, language, text_w=3.7 * cm), Spacer(1, 8)]
+    if show_period_comparison and data["previous_total"] is not None:
         compare_rows = [
-            [Paragraph(f"{L['last_month_label']} ({data['previous_month']})", styles["CompareLabel"]),
+            [Paragraph(f"{prev_period_label} ({data['previous_month']})", styles["CompareLabel"]),
              Paragraph(_fmt_money(data["previous_total"]), styles["CompareValue"])],
-            [Paragraph(f"{L['this_month_label']} ({data['current_month']})", styles["CompareLabel"]),
+            [Paragraph(f"{curr_period_label} ({data['current_month']})", styles["CompareLabel"]),
              Paragraph(f"<b>{_fmt_money(data['total_cost'])}</b>", styles["CompareValue"])],
             [Paragraph(L["change_label"], styles["CompareLabel"]),
              Paragraph(f"<font color='#dc2626'>+{_fmt_money(data['delta_amount'])} (%{data['cost_change_pct']:.1f})</font>"
@@ -650,6 +675,8 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
             ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ]))
         compare_cell.append(compare_table)
+    elif not show_period_comparison:
+        compare_cell = []  # günlük raporda bu panel tamamen boş bırakılır
     else:
         compare_cell.append(Paragraph(L["no_comparison_data"], styles["Body"]))
 
@@ -702,6 +729,7 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
     title_stack.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 1), (-1, 1), 5),
     ]))
     title_row2 = Table([[title_icon, title_stack]], colWidths=[1.4 * cm, 16.8 * cm])
     title_row2.setStyle(TableStyle([

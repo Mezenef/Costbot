@@ -39,7 +39,7 @@ export default function Sidebar({ pendingCount = 0, userName, userRole }: Sideba
           {collapsed ? "›" : "‹"}
         </button>
         <div className={collapsed ? "" : "pl-2"}>
-          <Logo size={collapsed ? 20 : 30} />
+          <Logo size={collapsed ? 35 : 44} />
         </div>
         {!collapsed && (
           <div className="pl-2">

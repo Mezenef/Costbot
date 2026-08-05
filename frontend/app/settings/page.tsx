@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 import Sidebar from "@/components/Sidebar";
 import { useLanguage } from "@/lib/i18n";
 import { getBudgetThreshold, updateBudgetThreshold, getTeamsWebhook, updateTeamsWebhook } from "@/lib/api";
+import UserMenu from "@/components/UserMenu";
 
 interface StoredUser {
   user_id: number;
@@ -106,12 +107,7 @@ export default function SettingsPage() {
             <h1 className="font-semibold text-gray-900 dark:text-white text-sm">{t("settings.title")}</h1>
             <p className="text-xs text-gray-400 dark:text-gray-500">{t("settings.subtitle")}</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 font-medium"
-          >
-            {t("common.logout")}
-          </button>
+          <UserMenu userName={user?.full_name} userRole={user?.role} />
         </header>
 
         <main className="p-6">

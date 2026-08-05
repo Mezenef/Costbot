@@ -29,6 +29,8 @@ import {
   DashboardTimeframe,
   Recommendation,
 } from "@/lib/api";
+
+import UserMenu from "@/components/UserMenu";
 import { useLanguage } from "@/lib/i18n";
 import ResourceGroupPanel from "@/components/ResourceGroupPanel";
 import MonthlyServiceChart from "@/components/MonthlyServiceChart";
@@ -198,12 +200,8 @@ export default function DashboardPage() {
               <option value="all">{t("dashboard.timeframeAll")}</option>
             </select>
 
-            <a
-              href={getReportDownloadUrl(locale, user?.user_id)}
-              className="flex items-center gap-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3.5 py-2 transition dark:shadow-[0_0_15px_rgba(59,130,246,0.3)]"
-            >
-              📄 {t("dashboard.downloadReport")}
-            </a>
+            
+      
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               aria-label="Tema değiştir"
@@ -211,12 +209,7 @@ export default function DashboardPage() {
             >
               {mounted && (theme === "dark" ? "☀️" : "🌙")}
             </button>
-            <button
-              onClick={handleLogout}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 font-medium"
-            >
-              {t("common.logout")}
-            </button>
+            <UserMenu userName={user?.full_name} userRole={user?.role} />
           </div>
         </header>
 

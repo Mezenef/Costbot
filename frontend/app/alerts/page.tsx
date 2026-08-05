@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import Sidebar from "@/components/Sidebar";
 import { getDashboardPeriodSummary, sendAlertEmail, sendTeamsAlert, getTeamsWebhook, CostSpike } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
+import UserMenu from "@/components/UserMenu";
 
 interface StoredUser {
   user_id: number;
@@ -130,12 +131,7 @@ export default function AlertsPage() {
             >
               {mounted && (theme === "dark" ? "☀️" : "🌙")}
             </button>
-            <button
-              onClick={handleLogout}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 font-medium"
-            >
-              {t("common.logout")}
-            </button>
+            <UserMenu userName={user?.full_name} userRole={user?.role} />
           </div>
         </header>
 

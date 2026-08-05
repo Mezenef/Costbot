@@ -37,13 +37,21 @@ _CATEGORY_EN = {
 }
 
 _MONTH_EXPR = "TO_CHAR(UsageDate::date, 'YYYY-MM')"
-_WEEK_EXPR = "TO_CHAR(UsageDate::date, 'IYYY-\"W\"IW')"
+# NOT: Kullanıcı testinde "haftalık" görünümdeki X ekseni etiketleri
+# (ör. "W28-2025") anlaşılmaz bulundu -- bunun yerine haftanın
+# BAŞLANGIÇ TARİHİNİ (PostgreSQL'de DATE_TRUNC('week', ...) her zaman
+# Pazartesi gününü verir) normal bir tarih olarak döndürüyoruz. Bu
+# sayede frontend'deki formatChartDateLabel() fonksiyonu, bunu otomatik
+# olarak DD-MM-YYYY formatına çevirir -- ekstra bir frontend değişikliği
+# gerekmez.
+_WEEK_EXPR = "TO_CHAR(DATE_TRUNC('week', UsageDate::date), 'YYYY-MM-DD')"
 
 # Dropdown'daki her seçeneğin kaç güne karşılık geldiği. "all" özel
 # olarak ele alınıyor (window_days'e ihtiyacı yok, veri setinin
 # tamamını kapsar).
 _TIMEFRAME_DAYS = {
     "daily": 1,
+    "7d": 7,
     "30d": 30,
     "3m": 90,
     "6m": 180,
@@ -280,8 +288,11 @@ def get_service_breakdown_by_period(granularity: str = "month", language: str = 
     conn = get_connection()
     date_expr = _MONTH_EXPR if granularity == "month" else _WEEK_EXPR
 
+    # NOT: Periyotlar KRONOLOJİK sırayla (eskiden yeniye, ASC)
+    # listeleniyor -- grafikte X ekseni SOLDAN SAĞA doğru eski
+    # haftadan/aydan en yeni haftaya/aya doğru ilerler.
     periods = [r["p"] for r in conn.execute(
-        f"SELECT DISTINCT {date_expr} AS p FROM CloudCosts ORDER BY p"
+        f"SELECT DISTINCT {date_expr} AS p FROM CloudCosts ORDER BY p ASC"
     ).fetchall()]
 
     top_services_rows = conn.execute(
@@ -551,6 +562,16 @@ def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: in
             "change_pct": round(change_pct, 1) if change_pct is not None else None,
         })
 
+    _PERIOD_COMPARISON_LABELS = {
+        "tr": {"daily": "düne göre", "7d": "geçen haftaya göre", "30d": "geçen aya göre",
+               "3m": "önceki 3 aya göre", "6m": "önceki 6 aya göre", "12m": "önceki 12 aya göre"},
+        "en": {"daily": "compared to yesterday", "7d": "compared to last week", "30d": "compared to last month",
+               "3m": "compared to the previous 3 months", "6m": "compared to the previous 6 months", "12m": "compared to the previous 12 months"},
+    }
+    comparison_phrase = _PERIOD_COMPARISON_LABELS.get(language, _PERIOD_COMPARISON_LABELS["tr"]).get(
+        timeframe, "önceki döneme göre" if language != "en" else "compared to the previous period"
+    )
+
     insights = []
     if language == "en":
         if category_breakdown:
@@ -558,14 +579,14 @@ def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: in
             insights.append(f"{top_cat['category']} services make up %{top_cat['pct']:.0f} of total cost.")
         if cost_change_pct is not None:
             direction = "increased" if cost_change_pct > 0 else "decreased"
-            insights.append(f"Costs {direction} by %{abs(cost_change_pct):.1f} compared to the previous period.")
+            insights.append(f"Costs {direction} by %{abs(cost_change_pct):.1f} {comparison_phrase}.")
     else:
         if category_breakdown:
             top_cat = category_breakdown[0]
             insights.append(f"{top_cat['category']} hizmetleri toplam maliyetin %{top_cat['pct']:.0f}'ini oluşturuyor.")
         if cost_change_pct is not None:
             direction = "arttı" if cost_change_pct > 0 else "azaldı"
-            insights.append(f"Maliyetler bir önceki döneme göre %{abs(cost_change_pct):.1f} {direction}.")
+            insights.append(f"Maliyetler {comparison_phrase} %{abs(cost_change_pct):.1f} {direction}.")
 
     conn.close()
 

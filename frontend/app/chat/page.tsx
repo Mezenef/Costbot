@@ -9,6 +9,7 @@ import CostChart from "@/components/CostChart";
 import DataTable from "@/components/DataTable";
 import { askQuestionStream, getHistory, getDashboardSummary, QueryStatus } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
+import UserMenu from "@/components/UserMenu";
 
 interface Message {
   role: "user" | "bot";
@@ -178,12 +179,7 @@ export default function ChatPage() {
             >
               {mounted && (theme === "dark" ? "☀️" : "🌙")}
             </button>
-            <button
-              onClick={handleLogout}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 font-medium"
-            >
-              {t("common.logout")}
-            </button>
+            <UserMenu userName={user?.full_name} userRole={user?.role} />
           </div>
         </header>
 
