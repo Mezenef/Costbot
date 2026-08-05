@@ -503,6 +503,7 @@ _GRANULARITY_TO_TIMEFRAME = {
 def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: str = None) -> bytes:
     L = LABELS.get(language, LABELS["tr"])
     show_period_comparison = True
+
     if granularity:
         from .dashboard import get_period_summary
         timeframe = _GRANULARITY_TO_TIMEFRAME.get(granularity, "30d")
@@ -515,7 +516,34 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
             data["trend"] = weekly_data["trend"]
     else:
         data = get_dashboard_summary(language=language, user_id=user_id)
+        
     recs = _get_recommendations(user_id=user_id)
+
+    # Granülariteye duyarlı başlık ve karşılaştırma metinlerinin önceden tanımlanması
+    if granularity == "day":
+        change_panel_title = L["daily_change_title"]
+        prev_period_label = L["yesterday_label"]
+        curr_period_label = L["today_label"]
+        comparison_phrase_tr = "bir önceki güne göre"
+        comparison_phrase_en = "compared to the previous day"
+        vs_label_tr = "önceki güne göre"
+        vs_label_en = "vs previous day"
+    elif granularity == "week":
+        change_panel_title = L["weekly_change_title"]
+        prev_period_label = L["last_week_label"]
+        curr_period_label = L["this_week_label"]
+        comparison_phrase_tr = "bir önceki haftaya göre"
+        comparison_phrase_en = "compared to the previous week"
+        vs_label_tr = "önceki haftaya göre"
+        vs_label_en = "vs previous week"
+    else:
+        change_panel_title = L["monthly_change_title"]
+        prev_period_label = L["last_month_label"]
+        curr_period_label = L["this_month_label"]
+        comparison_phrase_tr = "bir önceki aya göre"
+        comparison_phrase_en = "compared to the previous month"
+        vs_label_tr = "geçen aya göre"
+        vs_label_en = "vs last month"
 
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="MainTitle", fontSize=22, textColor=NAVY, fontName=FONT_BOLD, spaceAfter=14))
@@ -570,7 +598,7 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
         change_line = ""
         if data["cost_change_pct"] is not None:
             direction = L["increase"] if data["cost_change_pct"] >= 0 else L["decrease"]
-            change_line = f"a %{abs(data['cost_change_pct']):.1f} {direction} compared to the previous month."
+            change_line = f"a %{abs(data['cost_change_pct']):.1f} {direction} {comparison_phrase_en}."
         summary_text = (
             f"This report summarizes your Azure cloud spending for {period}. "
             f"Your total cost was <b>{_fmt_money(data['total_cost'])}</b>, reflecting {change_line} "
@@ -581,7 +609,7 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
         change_line = ""
         if data["cost_change_pct"] is not None:
             direction = "artış" if data["cost_change_pct"] >= 0 else "azalış"
-            change_line = f"bir önceki aya göre %{abs(data['cost_change_pct']):.1f} {direction} göstermiştir."
+            change_line = f"{comparison_phrase_tr} %{abs(data['cost_change_pct']):.1f} {direction} göstermiştir."
         summary_text = (
             f"Bu rapor, {period} dönemindeki Azure bulut harcamalarınızı özetlemektedir. "
             f"Toplam maliyetiniz <b>{_fmt_money(data['total_cost'])}</b> olarak gerçekleşmiş olup, {change_line} "
@@ -592,7 +620,8 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
     story.append(Spacer(1, 10))
 
     # ---- Metrik kartlari ----
-    change_str = f"↑ %{abs(data['cost_change_pct']):.1f} {L['vs_last_month']}" if data["cost_change_pct"] is not None else "-"
+    vs_label = vs_label_en if language == "en" else vs_label_tr
+    change_str = f"↑ %{abs(data['cost_change_pct']):.1f} {vs_label}" if data["cost_change_pct"] is not None else "-"
     change_color = RED if (data["cost_change_pct"] or 0) >= 0 else GREEN
     cards = [
         _metric_card("$", ACCENT, L["total_cost_card"], _fmt_money(data["total_cost"]), change_str, change_color, language),
@@ -639,7 +668,7 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
             dot = Drawing(0.3 * cm, 0.3 * cm)
             dot.add(Circle(0.15 * cm, 0.15 * cm, 0.15 * cm, fillColor=dot_color, strokeColor=None))
             legend_rows.append([dot, Paragraph(s["name"], styles["LegendItem"]),
-                                 Paragraph(f"%{s['pct']:.0f}", ParagraphStyle(name="pct", fontSize=7.6, fontName=FONT_BOLD, textColor=NAVY, alignment=2))])
+                                Paragraph(f"%{s['pct']:.0f}", ParagraphStyle(name="pct", fontSize=7.6, fontName=FONT_BOLD, textColor=NAVY, alignment=2))])
         legend_table = Table(legend_rows, colWidths=[0.35 * cm, 2.15 * cm, 1.0 * cm])
         legend_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -649,23 +678,6 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
         donut_row = Table([[donut_img, legend_table]], colWidths=[2.5 * cm, 3.5 * cm])
         donut_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
         donut_cell.append(donut_row)
-
-    # Panel başlığı ve etiketleri, seçilen granülariteye göre değişir --
-    # "Haftalık" raporda "Aylık Değişim / Geçen Ay / Bu Ay" gibi yanlış/
-    # sabit etiketler göstermek yerine, gerçek dönemi (hafta) yansıtan
-    # etiketler kullanılır.
-    if granularity == "day":
-        change_panel_title = L["daily_change_title"]
-        prev_period_label = L["yesterday_label"]
-        curr_period_label = L["today_label"]
-    elif granularity == "week":
-        change_panel_title = L["weekly_change_title"]
-        prev_period_label = L["last_week_label"]
-        curr_period_label = L["this_week_label"]
-    else:
-        change_panel_title = L["monthly_change_title"]
-        prev_period_label = L["last_month_label"]
-        curr_period_label = L["this_month_label"]
 
     compare_cell = [_panel_title("▦", TEAL, change_panel_title, styles, language, text_w=3.7 * cm), Spacer(1, 8)]
     if show_period_comparison and data["previous_total"] is not None:
@@ -748,7 +760,6 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story.append(Spacer(1, 20))
     story.append(title_row2)
     story.append(Spacer(1, 14))
 
