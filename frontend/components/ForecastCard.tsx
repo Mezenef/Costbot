@@ -63,9 +63,9 @@ export default function ForecastCard() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={forecast.chart_data}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-300 dark:text-gray-700" opacity={0.6} />
-                  <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={formatChartDateLabel} />
+                  <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={(v) => formatChartDateLabel(String(v ?? ""))} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip formatter={(v) => (v == null ? "-" : formatMoney(Number(v)))} labelFormatter={formatChartDateLabel} />
+                  <Tooltip formatter={(v) => (v == null ? "-" : formatMoney(Number(v)))} labelFormatter={(label) => formatChartDateLabel(String(label ?? ""))} />
                   <Line type="monotone" dataKey="actual" stroke="#2563eb" strokeWidth={2.5} dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="projected" stroke="#93c5fd" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} />
                 </LineChart>

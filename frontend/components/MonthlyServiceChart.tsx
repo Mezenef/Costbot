@@ -53,11 +53,11 @@ export default function MonthlyServiceChart() {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={breakdown.data} barCategoryGap="12%" margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-gray-300 dark:text-gray-700" opacity={0.6} />
-              <XAxis dataKey="period" tick={{ fontSize: 12 }} tickFormatter={formatChartDateLabel} />
+              <XAxis dataKey="period" tick={{ fontSize: 12 }} tickFormatter={(v) => formatChartDateLabel(String(v ?? ""))} />
               <YAxis tick={{ fontSize: 12 }} tickCount={11} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`} />
               <Tooltip
                 formatter={(v) => formatMoney(Number(v))}
-                labelFormatter={formatChartDateLabel}
+                labelFormatter={(label) => formatChartDateLabel(String(label ?? ""))}
                 contentStyle={{ fontSize: 11, padding: "6px 10px", borderRadius: 8 }}
                 itemStyle={{ padding: "1px 0" }}
                 labelStyle={{ fontSize: 10, marginBottom: 2 }}
