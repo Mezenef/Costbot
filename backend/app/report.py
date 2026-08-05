@@ -184,6 +184,18 @@ def _fmt_money(n):
     return f"${n:,.2f}"
 
 
+def _format_period_label(period: str) -> str:
+    """'YYYY-MM-DD — YYYY-MM-DD' formatındaki bir tarih aralığını
+    (ya da içindeki her bir YYYY-MM-DD tarihini) 'DD-MM-YYYY'
+    formatına çevirir. Farklı bir formatsa (ör. sadece 'YYYY-MM' ay
+    etiketi), o kısma dokunmadan olduğu gibi bırakır."""
+    import re
+    def repl(m):
+        y, mo, d = m.group(1), m.group(2), m.group(3)
+        return f"{d}-{mo}-{y}"
+    return re.sub(r"(\d{4})-(\d{2})-(\d{2})", repl, period)
+
+
 # ============================== GRAFIKLER ==============================
 
 def _style_axes(ax):
@@ -321,7 +333,7 @@ def _draw_page_frame(c, doc, data, L):
         c.setFont(FONT_BOLD, 15)
         c.drawString(MARGIN + 1.15 * cm, top_y + 0.18 * cm, "CostBot")
 
-    period = data.get("current_month") or datetime.now().strftime("%Y-%m")
+    period = _format_period_label(data.get("current_month") or datetime.now().strftime("%Y-%m"))
     tarih = datetime.now().strftime("%d.%m.%Y")
     right_text = f"{L['report_period']}: {period}     |     {L['report_date']}: {tarih}"
     c.setFont(FONT_BOLD, 8.5)
@@ -553,7 +565,7 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
     story.append(ozet_badge)
     story.append(Spacer(1, 6))
 
-    period = data.get("current_month") or L["period_fallback"]
+    period = _format_period_label(data.get("current_month") or L["period_fallback"])
     if language == "en":
         change_line = ""
         if data["cost_change_pct"] is not None:
@@ -729,13 +741,14 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
     title_stack.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 1), (-1, 1), 5),
+        ("TOPPADDING", (0, 1), (-1, 1), 9),
     ]))
     title_row2 = Table([[title_icon, title_stack]], colWidths=[1.4 * cm, 16.8 * cm])
     title_row2.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
     ]))
+    story.append(Spacer(1, 20))
     story.append(title_row2)
     story.append(Spacer(1, 14))
 
