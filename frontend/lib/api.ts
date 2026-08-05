@@ -303,6 +303,15 @@ export async function getReportHistory(userId: number): Promise<ReportHistoryIte
   if (!res.ok) throw new Error("Rapor geçmişi alınamadı.");
   return res.json();
 }
+export async function deleteReportHistoryItem(reportId: number, userId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/reports/history/${reportId}?user_id=${userId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Rapor kaydı silinemedi.");
+}
+
+export async function clearReportHistory(userId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/reports/history?user_id=${userId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Rapor geçmişi temizlenemedi.");
+}
 
 export async function sendAlertEmail(userId: number, language: string = "tr", serviceName?: string): Promise<{ sent: number; errors: string[] }> {
   const res = await fetch(`${API_URL}/alerts/send-email`, {

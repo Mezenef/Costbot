@@ -37,7 +37,7 @@ from .database import get_connection
 from .email_service import send_cost_alert_email, EmailNotConfiguredError, EmailSendError
 from .teams_service import send_teams_notification, get_teams_recipients, TeamsNotConfiguredError, TeamsSendError
 from .scheduler import start_scheduler, check_and_notify
-from . import forecast 
+from . import forecast
 
 WORKING_CSV = Path(__file__).parent.parent / "data" / "azure_cost_mock_data_WORKING.csv"
 DB_PATH = Path(__file__).parent.parent / "data" / "costbot.db"
@@ -45,10 +45,6 @@ DB_PATH = Path(__file__).parent.parent / "data" / "costbot.db"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # PostgreSQL'e geçiş sonrası: DB_PATH (eski SQLite yolu) artık anlamsız --
-    # her başlangıçta şemayı garanti altına alıyoruz. init_schema() içindeki
-    # "CREATE TABLE IF NOT EXISTS" ifadeleri sayesinde bu işlem GÜVENLİ ve
-    # TEKRARLANABİLİR -- tablo zaten varsa hiçbir şeyi bozmaz/silmez.
     from .database import get_connection, init_schema
     conn = get_connection()
     init_schema(conn)
@@ -66,8 +62,6 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-# ── API sağlamlaştırma: rate limiting, request ID, güvenlik header'ları,
-# güvenli hata formatı (bkz. security.py) ──
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -76,7 +70,6 @@ app.add_exception_handler(Exception, global_exception_handler)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
-# ── CORS ──
 ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
@@ -87,7 +80,6 @@ app.add_middleware(
 )
 
 
-# ── Pydantic modelleri ──
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Doğal dilde maliyet sorusu")
     session_id: str = Field(default="default", description="Chat oturumu kimliği")
@@ -139,6 +131,7 @@ class VerifyRequest(BaseModel):
     email: str
     code: str = Field(..., min_length=6, max_length=6)
 
+
 class ForgotPasswordRequest(BaseModel):
     email: str
 
@@ -148,27 +141,35 @@ class ResetPasswordRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=6)
     new_password: str = Field(..., min_length=8)
 
+
 class SendAlertRequest(BaseModel):
     user_id: int
     language: str = "tr"
-    service_name: str | None = None  # None = tüm uyarıları gönder
+    service_name: str | None = None
+
 
 class SendTeamsAlertRequest(BaseModel):
     user_id: int
     language: str = "tr"
     service_name: str | None = None
 
+
 class VerifyResetCodeRequest(BaseModel):
     email: str
     code: str = Field(..., min_length=6, max_length=6)
 
+
 class ResendCodeRequest(BaseModel):
     email: str
 
+
 class BudgetThresholdUpdate(BaseModel):
     threshold: float | None = Field(default=None, description="Aylık bütçe eşiği (USD). None = eşik kaldırılır.")
+
+
 class TeamsWebhookUpdate(BaseModel):
     webhook_url: str | None = Field(default=None, description="Kullanıcının kendi Teams webhook adresi. None = kaldırılır.")
+
 
 class UserOut(BaseModel):
     user_id: int
@@ -187,17 +188,12 @@ class RegisterResponse(BaseModel):
     email_sent: bool
 
 
-
-
 @app.post("/alerts/check-now")
 def alerts_check_now():
-    """Test/manuel tetikleme -- normalde saatte bir otomatik çalışan
-    kontrolü hemen çalıştırır, saatlerce beklemeden test edebilesin."""
     check_and_notify()
     return {"status": "checked"}
 
 
-# ── Health ──
 @app.get("/health")
 def health():
     return {"status": "ok", "time": time.time()}
@@ -210,8 +206,6 @@ def dashboard_summary(language: str = "tr", user_id: int | None = None):
 
 @app.get("/dashboard/period-summary")
 def dashboard_period_summary(timeframe: str = "30d", language: str = "tr", user_id: int | None = None):
-    """Dashboard'daki zaman aralığı dropdown'ı için endpoint.
-    timeframe: "daily" | "30d" | "3m" | "6m" | "12m" | "all" """
     allowed = {"daily", "7d", "30d", "3m", "6m", "12m", "all"}
     if timeframe not in allowed:
         raise HTTPException(status_code=400, detail=f"Geçersiz timeframe. İzin verilenler: {', '.join(sorted(allowed))}")
@@ -290,9 +284,11 @@ def list_resources(search: str = "", limit: int = 50, offset: int = 0):
 def service_breakdown_by_period(granularity: str = "month", language: str = "tr"):
     return dashboard.get_service_breakdown_by_period(granularity=granularity, language=language)
 
+
 @app.get("/dashboard/resource-group/{group_name}")
 def resource_group_detail(group_name: str, language: str = "tr"):
     return dashboard.get_resource_group_detail(group_name, language=language)
+
 
 @app.get("/reports/download")
 def download_report(language: str = "tr", user_id: int | None = None, granularity: str | None = None):
@@ -323,7 +319,6 @@ def download_report(language: str = "tr", user_id: int | None = None, granularit
     )
 
 
-# ── Kimlik doğrulama ──
 @app.post("/auth/register", response_model=RegisterResponse)
 def auth_register(req: RegisterRequest):
     try:
@@ -366,6 +361,7 @@ def auth_login(req: LoginRequest):
         raise HTTPException(status_code=401, detail=str(e))
     return UserOut(user_id=user.user_id, full_name=user.full_name, email=user.email, role=user.role)
 
+
 @app.post("/auth/forgot-password")
 def auth_forgot_password(req: ForgotPasswordRequest):
     try:
@@ -373,6 +369,7 @@ def auth_forgot_password(req: ForgotPasswordRequest):
     except (EmailNotConfiguredError, EmailSendError) as e:
         raise HTTPException(status_code=503, detail=str(e))
     return {"sent": True}
+
 
 @app.post("/auth/verify-reset-code")
 def auth_verify_reset_code(req: VerifyResetCodeRequest):
@@ -382,7 +379,7 @@ def auth_verify_reset_code(req: VerifyResetCodeRequest):
         raise HTTPException(status_code=400, detail=str(e))
     return {"valid": True}
 
-    
+
 @app.post("/auth/reset-password")
 def auth_reset_password(req: ResetPasswordRequest):
     try:
@@ -392,7 +389,6 @@ def auth_reset_password(req: ResetPasswordRequest):
     return {"reset": True}
 
 
-# ── DoD Bölüm 2: Doğal dil -> SQL -> sonuç ──
 @app.post("/query", response_model=QueryResponse)
 @limiter.limit("15/minute")
 def query(request: Request, req: QueryRequest):
@@ -407,11 +403,10 @@ def query(request: Request, req: QueryRequest):
         execution_time=result.execution_time,
     )
 
+
 @app.post("/query/stream")
 @limiter.limit("15/minute")
 def query_stream(request: Request, req: QueryRequest):
-    """Chat cevabını parça parça (Server-Sent Events) akıtır -- kullanıcı
-    cevabın 'yazıldığını' görür, tüm cevabın bitmesini beklemez."""
     def event_generator():
         for event in sql_agent.ask_stream(
             req.question,
@@ -425,7 +420,6 @@ def query_stream(request: Request, req: QueryRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-# ── DoD: CostRecommendations listeleme ──
 _REC_COLUMNS_SQL = (
     'RecommendationId AS "RecommendationId", CreatedDate AS "CreatedDate", '
     'TargetService AS "TargetService", TargetResourceName AS "TargetResourceName", '
@@ -491,7 +485,6 @@ def delete_recommendation(rec_id: int, user_id: int):
     return {"deleted": rec_id}
 
 
-# ── DoD: ChatHistory ──
 @app.get("/history")
 def get_history(user_id: int, session_id: str = "default", limit: int = 50):
     conn = get_connection()
@@ -509,7 +502,6 @@ def get_history(user_id: int, session_id: str = "default", limit: int = 50):
     return [dict(r) for r in rows][::-1]
 
 
-# ── Veritabanını manuel yeniden kurma ──
 @app.post("/admin/rebuild-database")
 def rebuild_database(dataset: str = "working"):
     csv_map = {
@@ -521,6 +513,7 @@ def rebuild_database(dataset: str = "working"):
         raise HTTPException(status_code=400, detail=f"Bilinmeyen veya bulunamayan veri seti: {dataset}")
     stats = build_database(csv_path=csv_path)
     return {"dataset": dataset, **stats}
+
 
 @app.get("/reports/history")
 def report_history(user_id: int):
@@ -535,6 +528,33 @@ def report_history(user_id: int):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+@app.delete("/reports/history/{report_id}")
+def delete_report_history_item(report_id: int, user_id: int):
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT ReportId FROM ReportHistory WHERE ReportId = ? AND UserId = ?",
+        (report_id, user_id),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Rapor kaydı bulunamadı")
+
+    conn.execute("DELETE FROM ReportHistory WHERE ReportId = ?", (report_id,))
+    conn.commit()
+    conn.close()
+    return {"deleted": report_id}
+
+
+@app.delete("/reports/history")
+def clear_report_history(user_id: int):
+    conn = get_connection()
+    conn.execute("DELETE FROM ReportHistory WHERE UserId = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return {"cleared": True}
+
 
 @app.get("/forecast")
 def cost_forecast(language: str = "tr", include_insight: bool = True):
@@ -574,11 +594,9 @@ def sync_real_azure_data(days: int = 30):
 
     return {"source": "azure_live", "days": days, **stats}
 
+
 @app.post("/admin/sync-real-azure-data-range")
 def sync_real_azure_data_range(start_date: str, end_date: str):
-    """Belirli bir tarih aralığı için (ay ay bölerek) geçmiş Azure
-    maliyet verisini çeker. UZUN SÜREBİLİR (her ay ayrı bir rapor
-    isteği ve bekleme gerektiriyor -- 6 ay için 10-30+ dakika olabilir)."""
     from . import azure_cost_fetcher
     from .database import load_from_azure
 
@@ -601,9 +619,11 @@ def sync_real_azure_data_range(start_date: str, end_date: str):
 
     return {"source": "azure_live", "start_date": start_date, "end_date": end_date, **stats}
 
+
 @app.get("/finops-score")
 def finops_score(language: str = "tr", user_id: int | None = None):
     return dashboard.get_finops_score(language=language, user_id=user_id)
+
 
 @app.get("/settings/budget-threshold")
 def get_budget_threshold(user_id: int):
@@ -633,6 +653,7 @@ def update_budget_threshold(user_id: int, body: BudgetThresholdUpdate):
     conn.commit()
     conn.close()
     return {"threshold": body.threshold}
+
 
 @app.get("/settings/teams-webhook")
 def get_teams_webhook(user_id: int):

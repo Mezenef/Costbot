@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import Sidebar from "@/components/Sidebar";
-import { getReportHistory, getReportDownloadUrl, ReportHistoryItem } from "@/lib/api";
-import UserMenu from "@/components/UserMenu";
+import { getReportHistory, getReportDownloadUrl, deleteReportHistoryItem, clearReportHistory, ReportHistoryItem } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
+import UserMenu from "@/components/UserMenu";
 
 interface StoredUser {
   user_id: number;
@@ -26,20 +26,51 @@ export default function ReportsPage() {
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [granularity, setGranularity] = useState<Granularity>(undefined);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [clearing, setClearing] = useState(false);
+
+  const loadHistory = useCallback((userId: number) => {
+    setLoading(true);
+    getReportHistory(userId)
+      .then(setHistory)
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     setMounted(true);
     const raw = localStorage.getItem("costbot_user");
     const parsedUser: StoredUser | null = raw ? JSON.parse(raw) : null;
-    if (parsedUser) setUser(parsedUser);
     if (parsedUser) {
-      getReportHistory(parsedUser.user_id)
-        .then(setHistory)
-        .finally(() => setLoading(false));
+      setUser(parsedUser);
+      loadHistory(parsedUser.user_id);
     } else {
       setLoading(false);
     }
-  }, []);
+  }, [loadHistory]);
+
+  async function handleDeleteOne(reportId: number) {
+    if (!user) return;
+    if (!window.confirm(t("reports.deleteConfirm"))) return;
+    setDeletingId(reportId);
+    try {
+      await deleteReportHistoryItem(reportId, user.user_id);
+      setHistory((prev) => prev.filter((h) => h.ReportId !== reportId));
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleClearAll() {
+    if (!user) return;
+    if (!window.confirm(t("reports.clearAllConfirm"))) return;
+    setClearing(true);
+    try {
+      await clearReportHistory(user.user_id);
+      setHistory([]);
+    } finally {
+      setClearing(false);
+    }
+  }
 
   function handleLogout() {
     localStorage.removeItem("costbot_user");
@@ -82,9 +113,8 @@ export default function ReportsPage() {
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t("reports.newReportDesc")}</p>
               </div>
               <a
-                href={getReportDownloadUrl(locale, user?.user_id, granularity)}
-              
-                className="flex items-center gap-1.5 text-sm font-medium bg-blue-100 hover:bg-blue-200 dark:bg-blue-500/20 dark:hover:bg-blue-500/30 text-blue-700 dark:text-blue-300 rounded-lg px-4 py-2.5 transition"
+              href={getReportDownloadUrl(locale, user?.user_id, granularity)}
+              className="flex items-center gap-1.5 text-sm font-medium bg-blue-100 hover:bg-blue-200 dark:bg-blue-500/20 dark:hover:bg-blue-500/30 text-blue-700 dark:text-blue-300 rounded-lg px-4 py-2.5 transition"
               >
                 📄 {t("reports.generate")}
               </a>
@@ -111,8 +141,17 @@ export default function ReportsPage() {
           </div>
 
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{t("reports.historyTitle")}</h3>
+              {!loading && history.length > 0 && (
+                <button
+                  onClick={handleClearAll}
+                  disabled={clearing}
+                  className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+                >
+                  {clearing ? t("common.loading") : t("reports.clearAll")}
+                </button>
+              )}
             </div>
 
             {loading && <p className="text-sm text-gray-400 dark:text-gray-500 px-5 py-6">{t("common.loading")}</p>}
@@ -138,13 +177,23 @@ export default function ReportsPage() {
                       <td className="px-5 py-3 text-gray-600 dark:text-gray-300 uppercase">{h.Language}</td>
                       <td className="px-5 py-3 text-gray-400 dark:text-gray-500">{h.GeneratedDate}</td>
                       <td className="px-5 py-3 text-right">
-                        <a
-                          href={getReportDownloadUrl(h.Language, user?.user_id)}
+                        <div className="flex items-center justify-end gap-3">
+                          <a
+                            href={getReportDownloadUrl(h.Language, user?.user_id)}
                           
-                          className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
-                        >
-                          {t("reports.download")}
-                        </a>
+                            className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
+                          >
+                            {t("reports.download")}
+                          </a>
+                          <button
+                            onClick={() => handleDeleteOne(h.ReportId)}
+                            disabled={deletingId === h.ReportId}
+                            aria-label={t("reports.deleteOne")}
+                            className="text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-40 transition"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

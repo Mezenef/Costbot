@@ -259,6 +259,10 @@ const translations: Record<Locale, Record<string, string>> = {
 "dashboard.timeframeDaily": "Günlük",
 "dashboard.vsPreviousDaily": "önceki güne göre",
 "alerts.emailOption": "E-posta",
+"reports.clearAll": "Tümünü Temizle",
+    "reports.deleteOne": "Sil",
+    "reports.deleteConfirm": "Bu rapor kaydını silmek istediğinize emin misiniz?",
+    "reports.clearAllConfirm": "Tüm geçmiş rapor kayıtlarını silmek istediğinize emin misiniz?",
     
   },
   en: {
@@ -515,6 +519,10 @@ const translations: Record<Locale, Record<string, string>> = {
 "dashboard.timeframeDaily": "Daily",
 "dashboard.vsPreviousDaily": "vs previous day",
 "alerts.emailOption": "Email",
+"reports.clearAll": "Clear All",
+    "reports.deleteOne": "Delete",
+    "reports.deleteConfirm": "Are you sure you want to delete this report record?",
+    "reports.clearAllConfirm": "Are you sure you want to delete all report history?",
   },
 };
 
