@@ -20,6 +20,22 @@ const PAGE_SIZE = 20;
 function formatMoney(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+const SERVICE_ROW_COLORS: Record<string, string> = {
+  "Virtual Machines": "bg-blue-50/70 dark:bg-blue-500/[0.16]",
+  "Azure SQL Database": "bg-purple-50/70 dark:bg-purple-500/[0.16]",
+  "Azure SQL Managed Instance": "bg-purple-50/70 dark:bg-purple-500/[0.16]",
+  "Storage": "bg-amber-50/70 dark:bg-amber-500/[0.16]",
+  "Application Gateway": "bg-teal-50/70 dark:bg-teal-500/[0.16]",
+  "VPN Gateway": "bg-teal-50/70 dark:bg-teal-500/[0.16]",
+  "Azure App Service": "bg-green-50/70 dark:bg-green-500/[0.16]",
+  "Azure Site Recovery": "bg-rose-50/70 dark:bg-rose-500/[0.16]",
+  "Log Analytics": "bg-indigo-50/70 dark:bg-indigo-500/[0.16]",
+  "Azure Databricks": "bg-orange-50/70 dark:bg-orange-500/[0.16]",
+};
+
+function serviceRowColor(service: string): string {
+  return SERVICE_ROW_COLORS[service] || "bg-gray-50/70 dark:bg-gray-800/20";
+}
 
 export default function ResourcesPage() {
   const router = useRouter();
@@ -111,10 +127,13 @@ export default function ResourcesPage() {
               </thead>
               <tbody>
                 {resources.map((r) => (
-                  <tr key={`${r.resource_name}-${r.resource_group}-${r.service_name}`} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                  <tr
+                    key={`${r.resource_name}-${r.resource_group}-${r.service_name}`}
+                    className={`border-b border-gray-100 dark:border-gray-800/50 last:border-0 hover:brightness-95 dark:hover:brightness-125 transition-all ${serviceRowColor(r.service_name)}`}
+                  >
                     <td className="px-4 py-2.5 text-gray-900 dark:text-white font-medium truncate max-w-[180px]">{r.resource_name}</td>
                     <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300">{r.service_name}</td>
-                    <td className="px-4 py-2.5 text-gray-400 dark:text-gray-500">{r.resource_group}</td>
+                    <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400">{r.resource_group}</td>
                     <td className="px-4 py-2.5 text-right text-gray-700 dark:text-gray-300">{formatMoney(r.current_month_cost)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-900 dark:text-white font-semibold">{formatMoney(r.total_cost)}</td>
                   </tr>

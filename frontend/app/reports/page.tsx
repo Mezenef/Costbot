@@ -84,7 +84,7 @@ export default function ReportsPage() {
               <a
                 href={getReportDownloadUrl(locale, user?.user_id, granularity)}
               
-                className="flex items-center gap-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2.5 transition dark:shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+                className="flex items-center gap-1.5 text-sm font-medium bg-blue-100 hover:bg-blue-200 dark:bg-blue-500/20 dark:hover:bg-blue-500/30 text-blue-700 dark:text-blue-300 rounded-lg px-4 py-2.5 transition"
               >
                 📄 {t("reports.generate")}
               </a>

@@ -19,6 +19,78 @@ function formatMoney(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Her satırdaki E-posta/Teams butonlarını TEK bir "Bildir" menüsünde
+// birleştiren bileşen -- tıklanınca iki seçenek (E-posta / Teams) açılır.
+function NotifyMenu({
+  onEmail,
+  onTeams,
+  hasTeamsWebhook,
+  sendingEmail,
+  sendingTeams,
+  label,
+  emailLabel,
+  teamsLabel,
+  sendingLabel,
+}: {
+  onEmail: () => void;
+  onTeams: () => void;
+  hasTeamsWebhook: boolean;
+  sendingEmail: boolean;
+  sendingTeams: boolean;
+  label: string;
+  emailLabel: string;
+  teamsLabel: string;
+  sendingLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const busy = sendingEmail || sendingTeams;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        disabled={busy}
+        className="text-xs font-medium bg-blue-100 hover:bg-blue-200 dark:bg-blue-500/20 dark:hover:bg-blue-500/30 text-blue-700 dark:text-blue-300 rounded-lg px-3.5 py-2 transition disabled:opacity-50 flex items-center gap-1.5"
+      >
+        {busy ? sendingLabel : label}
+        {!busy && <span className="text-[9px]">{open ? "▴" : "▾"}</span>}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1.5 w-40 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg py-1.5 z-20">
+            <button
+              onClick={() => {
+                setOpen(false);
+                onEmail();
+              }}
+              className="w-full text-left px-3 py-2 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              ✉️ {emailLabel}
+            </button>
+            <button
+              onClick={() => {
+                if (!hasTeamsWebhook) return;
+                setOpen(false);
+                onTeams();
+              }}
+              disabled={!hasTeamsWebhook}
+              className={`w-full text-left px-3 py-2 text-xs ${
+                hasTeamsWebhook
+                  ? "text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+                  : "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+              }`}
+            >
+              💬 {teamsLabel}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AlertsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -161,24 +233,17 @@ export default function AlertsPage() {
             <>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <p className="text-sm text-gray-500 dark:text-gray-400">{t("alerts.description")}</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSendAll}
-                    disabled={sendingAll}
-                    className="text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3.5 py-2 transition disabled:opacity-50"
-                  >
-                    {sendingAll ? t("alerts.sending") : t("alerts.sendAll")}
-                  </button>
-                  {hasTeamsWebhook && (
-                    <button
-                      onClick={handleSendAllTeams}
-                      disabled={sendingAllTeams}
-                      className="text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-3.5 py-2 transition disabled:opacity-50"
-                    >
-                      {sendingAllTeams ? t("alerts.sending") : t("alerts.sendAllTeams")}
-                    </button>
-                  )}
-                </div>
+                <NotifyMenu
+                  onEmail={handleSendAll}
+                  onTeams={handleSendAllTeams}
+                  hasTeamsWebhook={hasTeamsWebhook}
+                  sendingEmail={sendingAll}
+                  sendingTeams={sendingAllTeams}
+                  label={t("alerts.sendAll")}
+                  emailLabel={t("alerts.emailOption")}
+                  teamsLabel={t("alerts.sendAllTeams")}
+                  sendingLabel={t("alerts.sending")}
+                />
               </div>
 
               <div className="space-y-3">
@@ -190,24 +255,17 @@ export default function AlertsPage() {
                         ↑ %{s.change_pct} · {formatMoney(s.current_total)}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleSendOne(s.service_name)}
-                        disabled={sendingOne === s.service_name}
-                        className="text-xs font-medium bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
-                      >
-                        {sendingOne === s.service_name ? t("alerts.sending") : t("alerts.notify")}
-                      </button>
-                      {hasTeamsWebhook && (
-                        <button
-                          onClick={() => handleSendOneTeams(s.service_name)}
-                          disabled={sendingOneTeams === s.service_name}
-                          className="text-xs font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 rounded-lg px-3 py-1.5 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 disabled:opacity-50"
-                        >
-                          {sendingOneTeams === s.service_name ? t("alerts.sending") : t("alerts.notifyTeams")}
-                        </button>
-                      )}
-                    </div>
+                    <NotifyMenu
+                      onEmail={() => handleSendOne(s.service_name)}
+                      onTeams={() => handleSendOneTeams(s.service_name)}
+                      hasTeamsWebhook={hasTeamsWebhook}
+                      sendingEmail={sendingOne === s.service_name}
+                      sendingTeams={sendingOneTeams === s.service_name}
+                      label={t("alerts.notify")}
+                      emailLabel={t("alerts.emailOption")}
+                      teamsLabel={t("alerts.notifyTeams")}
+                      sendingLabel={t("alerts.sending")}
+                    />
                   </div>
                 ))}
               </div>

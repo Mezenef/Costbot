@@ -198,12 +198,12 @@ def _format_period_label(period: str) -> str:
 
 # ============================== GRAFIKLER ==============================
 
-def _style_axes(ax):
+def _style_axes(ax, labelsize=9.5, tick_color=None):
     for spine in ("top", "right"):
         ax.spines[spine].set_visible(False)
     for spine in ("left", "bottom"):
         ax.spines[spine].set_color(MPL_GRID)
-    ax.tick_params(colors=MPL_TEXT, labelsize=7.5)
+    ax.tick_params(colors=tick_color or MPL_TEXT, labelsize=labelsize)
 
 
 def _make_bar_chart(service_breakdown, L):
@@ -215,12 +215,12 @@ def _make_bar_chart(service_breakdown, L):
     bars = ax.barh(names, values, color=MPL_BLUE, height=0.55, zorder=3)
     ax.grid(axis="x", color=MPL_GRID, linewidth=0.8, zorder=0)
     ax.set_axisbelow(True)
-    _style_axes(ax)
-    ax.set_xlabel(L["cost_axis"], fontsize=7.5, color=MPL_TEXT)
+    _style_axes(ax, labelsize=10, tick_color="#0f172a")
+    ax.set_xlabel(L["cost_axis"], fontsize=9, color=MPL_TEXT)
     for b, v in zip(bars, values):
         ax.text(v, b.get_y() + b.get_height() / 2, f"  ${v:,.2f}", va="center", ha="left",
-                 fontsize=7, color="#0f172a", fontweight="bold")
-    ax.set_xlim(0, max(values) * 1.32 if values else 1)
+                 fontsize=9, color="#0f172a", fontweight="bold")
+    ax.set_xlim(0, max(values) * 1.35 if values else 1)
     fig.tight_layout()
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=170)
@@ -239,11 +239,11 @@ def _make_trend_chart(trend):
     ax.fill_between(months, totals, color=MPL_BLUE, alpha=0.08, zorder=2)
     ax.grid(axis="y", color=MPL_GRID, linewidth=0.8, zorder=0)
     ax.set_axisbelow(True)
-    _style_axes(ax)
+    _style_axes(ax, labelsize=10, tick_color="#0f172a")
     for x, y in zip(months, totals):
         ax.annotate(f"{y:,.0f}", (x, y), textcoords="offset points", xytext=(0, 7),
-                    ha="center", fontsize=6.6, color=MPL_TEXT, fontweight="bold")
-    plt.xticks(fontsize=7)
+                    ha="center", fontsize=8.5, color="#0f172a", fontweight="bold")
+    plt.xticks(fontsize=9, color="#0f172a")
     fig.tight_layout()
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=170)

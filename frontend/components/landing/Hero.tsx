@@ -9,19 +9,93 @@ import Logo from "@/components/Logo";
 // ── Demo senaryosu (gercek CostBot cevabina benzer, sabit) ──
 
 const DEMO_BARS = [
-  { label: "Virtual Machines", value: 72430, max: 80000 },
-  { label: "Azure SQL Database", value: 38210, max: 80000 },
-  { label: "Storage Accounts", value: 21450, max: 80000 },
-  { label: "Azure Kubernetes Service", value: 14230, max: 80000 },
-  { label: "Bandwidth", value: 7890, max: 80000 },
+  { label: "Virtual Machines", Icon: IconVM, value: 72430, max: 80000 },
+  { label: "Azure SQL Database", Icon: IconDatabase, value: 38210, max: 80000 },
+  { label: "Storage Accounts", Icon: IconStorage, value: 21450, max: 80000 },
+  { label: "Azure Kubernetes Service", Icon: IconKubernetes, value: 14230, max: 80000 },
+  { label: "Bandwidth", Icon: IconBandwidth, value: 7890, max: 80000 },
 ];
 
-type Phase = "typingQuestion" | "pauseAfterQuestion" | "typingIntro" | "growingBars" | "typingSummary" | "holding" | "resetting";
+type Phase = "idle" | "typingQuestion" | "pauseAfterQuestion" | "typingIntro" | "growingBars" | "typingSummary" | "holding" | "resetting";
 
-const TYPE_SPEED_MS = 28;
-const BAR_GROW_DURATION_MS = 700;
-const BAR_STAGGER_MS = 120;
-const HOLD_DURATION_MS = 3200;
+const TYPE_SPEED_MS = 42;
+const BAR_GROW_DURATION_MS = 1100;
+const BAR_STAGGER_MS = 200;
+const HOLD_DURATION_MS = 4000;
+
+function IconBadge({ children, bg }: { children: React.ReactNode; bg: string }) {
+  return (
+    <div
+      className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-md"
+      style={{ background: bg }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function IconVM() {
+  return (
+    <IconBadge bg="linear-gradient(135deg, #2563eb, #1d4ed8)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <rect x="2.5" y="4" width="19" height="12" rx="2" fill="white" fillOpacity="0.95" />
+        <rect x="4.5" y="6" width="15" height="8" rx="1" fill="#2563eb" />
+        <rect x="6" y="7.5" width="4.5" height="1.4" rx="0.7" fill="white" />
+        <rect x="6" y="9.6" width="7" height="1.4" rx="0.7" fill="white" fillOpacity="0.7" />
+        <line x1="9" y1="20" x2="15" y2="20" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+        <line x1="12" y1="16" x2="12" y2="20" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </IconBadge>
+  );
+}
+
+function IconDatabase() {
+  return (
+    <IconBadge bg="linear-gradient(135deg, #9333ea, #7e22ce)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <ellipse cx="12" cy="5.5" rx="8" ry="3" fill="white" />
+        <path d="M4 5.5v5.5c0 1.66 3.58 3 8 3s8-1.34 8-3V5.5" fill="white" fillOpacity="0.75" />
+        <path d="M4 11v5.5c0 1.66 3.58 3 8 3s8-1.34 8-3V11" fill="white" fillOpacity="0.55" />
+      </svg>
+    </IconBadge>
+  );
+}
+
+function IconStorage() {
+  return (
+    <IconBadge bg="linear-gradient(135deg, #f59e0b, #d97706)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" fill="white" fillOpacity="0.95" />
+        <path d="M3.3 7 12 12l8.7-5" stroke="#d97706" strokeWidth="1.6" fill="none" strokeLinejoin="round" />
+        <line x1="12" y1="22" x2="12" y2="12" stroke="#d97706" strokeWidth="1.6" />
+      </svg>
+    </IconBadge>
+  );
+}
+
+function IconKubernetes() {
+  return (
+    <IconBadge bg="linear-gradient(135deg, #0ea5e9, #0284c7)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2 3 7v10l9 5 9-5V7Z" fill="white" fillOpacity="0.9" />
+        <circle cx="12" cy="12" r="3.2" fill="#0284c7" />
+        <path d="M12 6v3.5M12 14.5V18M7 9.5l3 2M14 12.5l3 2M7 14.5l3-2M14 11.5l3-2" stroke="#0284c7" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    </IconBadge>
+  );
+}
+
+function IconBandwidth() {
+  return (
+    <IconBadge bg="linear-gradient(135deg, #10b981, #059669)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
+        <path d="M4.5 12.8a10.5 10.5 0 0 1 15 0" opacity="0.55" />
+        <path d="M7.3 15.6a6.5 6.5 0 0 1 9.4 0" opacity="0.8" />
+        <circle cx="12" cy="18.2" r="1.6" fill="white" stroke="none" />
+      </svg>
+    </IconBadge>
+  );
+}
 
 /**
  * Karakter karakter "yaziliyor" hissi veren basit bir hook.
@@ -52,9 +126,28 @@ export default function Hero() {
   const DEMO_QUESTION = t("hero.demo.question");
   const DEMO_INTRO = t("hero.demo.intro");
   const DEMO_SUMMARY = t("hero.demo.summary");
-  const [phase, setPhase] = useState<Phase>("typingQuestion");
+  const [phase, setPhase] = useState<Phase>("idle");
   const [barsVisible, setBarsVisible] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const demoRef = useRef<HTMLDivElement>(null);
+
+  // Demo, sayfa açılır açılmaz DEĞİL -- kullanıcı bu bölüme kaydırıp
+  // görünür hâle getirdiğinde başlar.
+  useEffect(() => {
+    const el = demoRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setPhase("typingQuestion");
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.3 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const questionText = useTypewriter(DEMO_QUESTION, phase === "typingQuestion");
   const introText = useTypewriter(
@@ -63,7 +156,7 @@ export default function Hero() {
   );
   const summaryText = useTypewriter(DEMO_SUMMARY, phase === "typingSummary" || phase === "holding");
 
-  const questionDone = phase !== "typingQuestion";
+  const questionDone = phase !== "idle" && phase !== "typingQuestion";
   const introDone = phase === "growingBars" || phase === "typingSummary" || phase === "holding";
 
   useEffect(() => {
@@ -71,7 +164,9 @@ export default function Hero() {
     clearAll();
     timers.current = [];
 
-    if (phase === "typingQuestion") {
+    if (phase === "idle") {
+      // Görünür olana kadar bekle -- yukarıdaki IntersectionObserver tetikler.
+    } else if (phase === "typingQuestion") {
       const t = setTimeout(() => setPhase("pauseAfterQuestion"), DEMO_QUESTION.length * TYPE_SPEED_MS + 300);
       timers.current.push(t);
     } else if (phase === "pauseAfterQuestion") {
@@ -136,8 +231,8 @@ export default function Hero() {
             <p className="text-gray-300 text-lg max-w-2xl mx-auto mb-8">
               {t("hero.subtitle")}
             </p>
-            <a
             
+            <a
               href="/register"
               className="inline-flex items-center gap-2 bg-blue-600 text-white font-semibold rounded-xl px-6 py-3.5 hover:bg-blue-700 shadow-[0_0_30px_rgba(59,130,246,0.45)]"
             >
@@ -149,8 +244,7 @@ export default function Hero() {
       </div>
 
       {/* ── Canlı demo kartı: görselin ALTINDA, ayrı bir sayfa bölümü olarak ── */}
-      {/* ── Canlı demo kartı: görselin ALTINDA, ayrı bir sayfa bölümü olarak ── */}
-      <div className="relative isolate px-6 md:px-12 py-20 max-w-5xl mx-auto text-center">
+      <div ref={demoRef} className="relative isolate px-6 md:px-12 py-20 max-w-5xl mx-auto text-center">
         <AnimatedBackground variant="dense" />
         <div className="bg-white dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 dark:shadow-[0_0_40px_rgba(59,130,246,0.08)] rounded-2xl shadow-xl text-left overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 dark:border-gray-700">
@@ -195,7 +289,19 @@ export default function Hero() {
                         transitionDelay: `${i * BAR_STAGGER_MS}ms`,
                       }}
                     />
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 text-center">{b.label}</span>
+                    <span
+                      className="mt-2 transition-all ease-out"
+                      style={{
+                        opacity: barsVisible ? 1 : 0,
+                        transform: barsVisible ? "translateY(0) scale(1)" : "translateY(8px) scale(0.85)",
+                        transitionDuration: "700ms",
+                        transitionDelay: `${i * BAR_STAGGER_MS + 500}ms`,
+                      }}
+                      aria-hidden="true"
+                    >
+                      <b.Icon />
+                    </span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 text-center leading-tight">{b.label}</span>
                   </div>
                 ))}
               </div>

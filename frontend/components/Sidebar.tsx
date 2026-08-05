@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLanguage } from "@/lib/i18n";
@@ -15,6 +15,10 @@ export default function Sidebar({ pendingCount = 0, userName, userRole }: Sideba
   const pathname = usePathname();
   const { t } = useLanguage();
   const [collapsed, setCollapsed] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [indicator, setIndicator] = useState({ top: 0, height: 0, opacity: 0 });
+  const itemRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const navRef = useRef<HTMLElement>(null);
 
   const NAV_ITEMS = [
     { href: "/dashboard", icon: "📊", label: t("sidebar.dashboard") },
@@ -25,6 +29,27 @@ export default function Sidebar({ pendingCount = 0, userName, userRole }: Sideba
     { href: "/alerts", icon: "🔔", label: t("sidebar.alerts") },
     { href: "/settings", icon: "⚙️", label: t("sidebar.settings") },
   ];
+
+  const activeIndex = NAV_ITEMS.findIndex((item) => item.href === pathname);
+
+  // Fare hangi sekmenin üzerindeyse, "indicator" (kayan gradyan) o
+  // sekmenin konumuna/boyutuna göre yumuşak bir şekilde taşınır.
+  // Aktif (tıklanmış) sekmenin üzerine gelinince indicator GİZLENİR --
+  // çünkü o sekme zaten kendi sabit mavi arka planını gösteriyor.
+  useEffect(() => {
+    if (hoveredIndex === null || hoveredIndex === activeIndex || !itemRefs.current[hoveredIndex] || !navRef.current) {
+      setIndicator((s) => ({ ...s, opacity: 0 }));
+      return;
+    }
+    const item = itemRefs.current[hoveredIndex]!;
+    const navBox = navRef.current.getBoundingClientRect();
+    const itemBox = item.getBoundingClientRect();
+    setIndicator({
+      top: itemBox.top - navBox.top,
+      height: itemBox.height,
+      opacity: 1,
+    });
+  }, [hoveredIndex, collapsed, activeIndex]);
 
   return (
     <aside
@@ -39,7 +64,7 @@ export default function Sidebar({ pendingCount = 0, userName, userRole }: Sideba
           {collapsed ? "›" : "‹"}
         </button>
         <div className={collapsed ? "" : "pl-2"}>
-          <Logo size={collapsed ? 35 : 44} />
+          <Logo size={collapsed ? 28 : 42} />
         </div>
         {!collapsed && (
           <div className="pl-2">
@@ -49,18 +74,30 @@ export default function Sidebar({ pendingCount = 0, userName, userRole }: Sideba
         )}
       </div>
 
-      <nav className="flex-1 px-3 py-2 space-y-1">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href;
+      <nav
+        ref={navRef}
+        className="flex-1 px-3 py-2 space-y-1 relative"
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
+        {/* Kayan hover göstergesi -- koyu mavi, hafif gradyan */}
+        <div
+          className="absolute left-3 right-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 pointer-events-none transition-all duration-200 ease-out"
+          style={{ top: indicator.top, height: indicator.height, opacity: indicator.opacity }}
+        />
+
+        {NAV_ITEMS.map((item, i) => {
+          const active = i === activeIndex;
           return (
             <Link
               key={item.href}
+              ref={(el) => { itemRefs.current[i] = el; }}
+              onMouseEnter={() => setHoveredIndex(i)}
               href={item.href}
               title={collapsed ? item.label : undefined}
-              className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
+              className={`relative z-10 flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                 active
                   ? "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400"
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  : "text-gray-600 dark:text-gray-400 hover:text-blue-700 dark:hover:text-blue-400"
               }`}
             >
               <span className={`flex items-center ${collapsed ? "" : "gap-3"}`}>

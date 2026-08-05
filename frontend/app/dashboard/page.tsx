@@ -61,10 +61,27 @@ function formatMoney(n: number) {
   })}`;
 }
 
-function ChangeBadge({ pct }: { pct: number | null }) {
+// light=true -> gradyanli ozet kartlarinin icinde kullanilir; acik temada
+// koyu (okunakli) renkler, koyu temada beyaz renkler otomatik uygulanir.
+function ChangeBadge({ pct, light }: { pct: number | null; light?: boolean }) {
   if (pct === null)
-    return <span className="text-xs text-gray-400 dark:text-gray-500">—</span>;
+    return (
+      <span className={`text-xs ${light ? "text-gray-500 dark:text-white/70" : "text-gray-400 dark:text-gray-500"}`}>
+        —
+      </span>
+    );
   const up = pct >= 0;
+  if (light) {
+    return (
+      <span
+        className={`text-xs font-medium ${
+          up ? "text-red-700 dark:text-white" : "text-emerald-700 dark:text-white"
+        }`}
+      >
+        {up ? "↑" : "↓"} %{Math.abs(pct).toFixed(1)}
+      </span>
+    );
+  }
   return (
     <span
       className={`text-xs font-medium ${
@@ -125,9 +142,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [trendChartType, setTrendChartType] = useState<"line" | "bar">("line");
-  const [distributionChartType, setDistributionChartType] = useState<
-    "donut" | "bar"
-  >("donut");
+  const [distributionChartType, setDistributionChartType] = useState<"donut" | "bar">("donut");
   const [timeframe, setTimeframe] = useState<DashboardTimeframe>("30d");
 
   useEffect(() => {
@@ -200,8 +215,6 @@ export default function DashboardPage() {
               <option value="all">{t("dashboard.timeframeAll")}</option>
             </select>
 
-            
-      
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               aria-label="Tema değiştir"
@@ -255,61 +268,70 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+                {/* Toplam Maliyet -- mavi */}
+                <div className="bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-500/80 dark:to-blue-700/80 rounded-2xl p-5 shadow-sm border border-blue-200/60 dark:border-blue-500/20">
+                  <div className="text-xs text-blue-700 dark:text-blue-100 mb-1">
                     {t("dashboard.totalCost")}
                   </div>
-                  <div className="text-xl font-bold text-gray-900 dark:text-white">
+                  <div className="text-xl font-bold text-blue-950 dark:text-white">
                     {formatMoney(data.total_cost)}
                   </div>
-                  <div className="mt-1">
-                    <ChangeBadge pct={data.cost_change_pct} />{" "}
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <div className="mt-1 flex items-center gap-1">
+                    <ChangeBadge pct={data.cost_change_pct} light />
+                    <span className="text-xs text-blue-700/80 dark:text-blue-100">
                       {getComparisonLabel(timeframe, t)}
                     </span>
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+
+                {/* Bugünkü Maliyet -- camgöbeği */}
+                <div className="bg-gradient-to-br from-cyan-100 to-cyan-200 dark:from-cyan-500/80 dark:to-cyan-700/80 rounded-2xl p-5 shadow-sm border border-cyan-200/60 dark:border-cyan-500/20">
+                  <div className="text-xs text-cyan-700 dark:text-cyan-100 mb-1">
                     {t("dashboard.todayCost")}
                   </div>
-                  <div className="text-xl font-bold text-gray-900 dark:text-white">
+                  <div className="text-xl font-bold text-cyan-950 dark:text-white">
                     {formatMoney(data.today_cost)}
                   </div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <div className="text-xs text-cyan-700/80 dark:text-cyan-100 mt-1">
                     {formatDateDMY(data.today_date)}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+
+                {/* Potansiyel Tasarruf -- yeşil */}
+                <div className="bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-500/80 dark:to-emerald-700/80 rounded-2xl p-5 shadow-sm border border-emerald-200/60 dark:border-emerald-500/20">
+                  <div className="text-xs text-emerald-700 dark:text-emerald-100 mb-1">
                     {t("dashboard.potentialSavings")}
                   </div>
-                  <div className="text-xl font-bold text-green-600 dark:text-green-400">
+                  <div className="text-xl font-bold text-emerald-950 dark:text-white">
                     {formatMoney(data.potential_savings)}
                   </div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <div className="text-xs text-emerald-700/80 dark:text-emerald-100 mt-1">
                     {t("dashboard.fromPending")}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+
+                {/* Bekleyen Öneriler -- mor */}
+                <div className="bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-500/80 dark:to-purple-700/80 rounded-2xl p-5 shadow-sm border border-purple-200/60 dark:border-purple-500/20">
+                  <div className="text-xs text-purple-700 dark:text-purple-100 mb-1">
                     {t("dashboard.pendingRecs")}
                   </div>
-                  <div className="text-xl font-bold text-gray-900 dark:text-white">
+                  <div className="text-xl font-bold text-purple-950 dark:text-white">
                     {data.pending_recommendations}
                   </div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <div className="text-xs text-purple-700/80 dark:text-purple-100 mt-1">
                     {t("dashboard.awaitingReview")}
                   </div>
                 </div>
-                <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+
+                {/* Kaynaklar -- gri/slate */}
+                <div className="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-600/80 dark:to-slate-800/80 rounded-2xl p-5 shadow-sm border border-slate-200/60 dark:border-slate-500/20">
+                  <div className="text-xs text-slate-600 dark:text-slate-300 mb-1">
                     {t("dashboard.resources")}
                   </div>
-                  <div className="text-xl font-bold text-gray-900 dark:text-white">
+                  <div className="text-xl font-bold text-slate-900 dark:text-white">
                     {data.resource_count}
                   </div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <div className="text-xs text-slate-600/80 dark:text-slate-300 mt-1">
                     {t("dashboard.trackedResources")}
                   </div>
                 </div>
@@ -358,12 +380,12 @@ export default function DashboardPage() {
                             >
                               <stop
                                 offset="0%"
-                                stopColor="#2563eb"
-                                stopOpacity={0.25}
+                                stopColor="#3b82f6"
+                                stopOpacity={0.3}
                               />
                               <stop
                                 offset="100%"
-                                stopColor="#2563eb"
+                                stopColor="#3b82f6"
                                 stopOpacity={0}
                               />
                             </linearGradient>
@@ -392,10 +414,10 @@ export default function DashboardPage() {
                           <Line
                             type="monotone"
                             dataKey="total"
-                            stroke="#2563eb"
+                            stroke="#3b82f6"
                             strokeWidth={2.5}
-                            dot={{ r: 3, fill: "#2563eb", strokeWidth: 0 }}
-                            activeDot={{ r: 5 }}
+                            dot={{ r: 3, fill: "#3b82f6", strokeWidth: 0 }}
+                            activeDot={{ r: 5, fill: "#3b82f6" }}
                             isAnimationActive={true}
                             animationDuration={900}
                             animationEasing="ease-in-out"
@@ -427,7 +449,7 @@ export default function DashboardPage() {
                           />
                           <Bar
                             dataKey="total"
-                            fill="#2563eb"
+                            fill="#3b82f6"
                             radius={[6, 6, 0, 0]}
                             isAnimationActive={true}
                             animationDuration={900}
@@ -601,7 +623,7 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid lg:grid-cols-3 gap-4 items-start">
-                <CollapsibleCard title={t("dashboard.topResourceGroups")}>
+                <CollapsibleCard title={t("dashboard.topResourceGroups")} accentColor="blue">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">
@@ -649,6 +671,7 @@ export default function DashboardPage() {
                 <CollapsibleCard
                   title={t("dashboard.aiInsights")}
                   badge={recs.length > 0 ? recs.length : undefined}
+                  accentColor="purple"
                 >
                   <a
                     href="/recommendations"
@@ -693,6 +716,7 @@ export default function DashboardPage() {
                       ? data.cost_spikes.length
                       : undefined
                   }
+                  accentColor="red"
                 >
                   <p className="text-[11px] text-gray-400 dark:text-gray-500 mb-3">
                     {t("dashboard.topIncreasesDesc")}

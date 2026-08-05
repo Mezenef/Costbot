@@ -111,7 +111,7 @@ export default function SettingsPage() {
         </header>
 
         <main className="p-6">
-          <div className="max-w-2xl">
+          <div className="max-w-4xl">
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 mb-4">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">{t("settings.profile")}</h3>
             <div className="flex items-center gap-3 mb-4">
