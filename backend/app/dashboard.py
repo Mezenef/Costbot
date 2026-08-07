@@ -14,7 +14,9 @@ karşılaştırma dönemi olmadığı için cost_change_pct/previous_total gibi
 alanlar None döner (frontend bunu "karşılaştırma verisi yok" olarak
 göstermeli).
 """
-from datetime import date, timedelta
+
+import os
+from datetime import date, timedelta, datetime
 from .database import get_connection
 
 _SERVICE_CATEGORY = {
@@ -37,18 +39,8 @@ _CATEGORY_EN = {
 }
 
 _MONTH_EXPR = "TO_CHAR(UsageDate::date, 'YYYY-MM')"
-# NOT: Kullanıcı testinde "haftalık" görünümdeki X ekseni etiketleri
-# (ör. "W28-2025") anlaşılmaz bulundu -- bunun yerine haftanın
-# BAŞLANGIÇ TARİHİNİ (PostgreSQL'de DATE_TRUNC('week', ...) her zaman
-# Pazartesi gününü verir) normal bir tarih olarak döndürüyoruz. Bu
-# sayede frontend'deki formatChartDateLabel() fonksiyonu, bunu otomatik
-# olarak DD-MM-YYYY formatına çevirir -- ekstra bir frontend değişikliği
-# gerekmez.
 _WEEK_EXPR = "TO_CHAR(DATE_TRUNC('week', UsageDate::date), 'YYYY-MM-DD')"
 
-# Dropdown'daki her seçeneğin kaç güne karşılık geldiği. "all" özel
-# olarak ele alınıyor (window_days'e ihtiyacı yok, veri setinin
-# tamamını kapsar).
 _TIMEFRAME_DAYS = {
     "daily": 1,
     "7d": 7,
@@ -97,9 +89,9 @@ def get_dashboard_summary(language: str = "tr", user_id: int = None) -> dict:
     pending_count = rec_row["cnt"]
     potential_savings = rec_row["total"]
 
-    resource_count = conn.execute(
-        "SELECT COUNT(DISTINCT ResourceId) AS cnt FROM CloudCosts"
-    ).fetchone()["cnt"]
+    resource_count = conn.execute("SELECT COUNT(DISTINCT ResourceName) AS cnt FROM CloudCosts").fetchone()["cnt"]
+    service_count = conn.execute("SELECT COUNT(DISTINCT ServiceName) AS cnt FROM CloudCosts").fetchone()["cnt"]
+    group_count = conn.execute("SELECT COUNT(DISTINCT ResourceGroup) AS cnt FROM CloudCosts").fetchone()["cnt"]
 
     trend = _fetch_all(conn, f"""
         SELECT {_MONTH_EXPR} AS month, SUM(PreTaxCost) AS total
@@ -113,7 +105,7 @@ def get_dashboard_summary(language: str = "tr", user_id: int = None) -> dict:
     """, (current_month,)) if current_month else []
 
     top_services = service_rows[:5]
-    other_total = sum(r["servicename"] and r["total"] for r in top_services) if False else sum(r["total"] for r in service_rows[5:])
+    other_total = sum(r["total"] for r in service_rows[5:])
     service_breakdown = [
         {"name": r["servicename"], "total": r["total"], "pct": round(r["total"] / total_cost * 100, 1) if total_cost else 0}
         for r in top_services
@@ -224,6 +216,8 @@ def get_dashboard_summary(language: str = "tr", user_id: int = None) -> dict:
         "potential_savings": round(potential_savings, 2),
         "pending_recommendations": pending_count,
         "resource_count": resource_count,
+        "service_count": service_count,
+        "group_count": group_count,
         "trend": [{"month": t["month"], "total": round(t["total"], 2)} for t in trend],
         "service_breakdown": service_breakdown,
         "category_breakdown": category_breakdown,
@@ -288,13 +282,6 @@ def get_service_breakdown_by_period(granularity: str = "month", language: str = 
     conn = get_connection()
     date_expr = _MONTH_EXPR if granularity == "month" else _WEEK_EXPR
 
-    # NOT: Periyotlar KRONOLOJİK sırayla (eskiden yeniye, ASC)
-    # listeleniyor -- grafikte X ekseni SOLDAN SAĞA doğru eski
-    # haftadan/aydan en yeni haftaya/aya doğru ilerler.
-    periods = [r["p"] for r in conn.execute(
-        f"SELECT DISTINCT {date_expr} AS p FROM CloudCosts ORDER BY p ASC"
-    ).fetchall()]
-
     top_services_rows = conn.execute(
         "SELECT ServiceName, SUM(PreTaxCost) AS total FROM CloudCosts "
         "GROUP BY ServiceName ORDER BY total DESC LIMIT 5"
@@ -302,16 +289,22 @@ def get_service_breakdown_by_period(granularity: str = "month", language: str = 
     top_services = [r["servicename"] for r in top_services_rows]
     other_label = "Diğer" if language == "tr" else "Other"
 
-    result = []
-    for period in periods:
-        row_data = {"period": period}
-        period_rows = conn.execute(
-            f"SELECT ServiceName, SUM(PreTaxCost) AS total FROM CloudCosts "
-            f"WHERE {date_expr} = ? GROUP BY ServiceName",
-            (period,),
-        ).fetchall()
-        service_totals = {r["servicename"]: r["total"] for r in period_rows}
+    all_rows = _fetch_all(conn, f"""
+        SELECT {date_expr} AS period, ServiceName, SUM(PreTaxCost) AS total
+        FROM CloudCosts
+        GROUP BY period, ServiceName
+        ORDER BY period ASC
+    """)
+    conn.close()
 
+    by_period: dict[str, dict[str, float]] = {}
+    for r in all_rows:
+        by_period.setdefault(r["period"], {})[r["servicename"]] = r["total"]
+
+    result = []
+    for period in sorted(by_period.keys()):
+        service_totals = by_period[period]
+        row_data = {"period": period}
         other_total = 0.0
         for svc, total in service_totals.items():
             if svc in top_services:
@@ -323,7 +316,6 @@ def get_service_breakdown_by_period(granularity: str = "month", language: str = 
         row_data[other_label] = round(other_total, 2)
         result.append(row_data)
 
-    conn.close()
     return {"services": top_services + [other_label], "data": result}
 
 
@@ -378,25 +370,70 @@ def get_resources(search: str = "", limit: int = 50, offset: int = 0) -> dict:
     }
 
 
+def get_cost_spikes_only(timeframe: str = "30d", language: str = "tr") -> list:
+    """PERFORMANS: send_alert_email/send_teams_alert endpoint'leri için
+    -- sadece maliyet artışı (spike) listesine ihtiyaç duyulduğunda,
+    get_period_summary()'nin TÜMÜNÜ çalıştırmak yerine SADECE bu hafif
+    fonksiyon kullanılır."""
+    conn = get_connection()
+
+    last_date_row = conn.execute("SELECT MAX(UsageDate) AS d FROM CloudCosts").fetchone()
+    last_date_str = last_date_row["d"]
+    first_date_row = conn.execute("SELECT MIN(UsageDate) AS d FROM CloudCosts").fetchone()
+    first_date_str = first_date_row["d"]
+
+    if not last_date_str or not first_date_str:
+        conn.close()
+        return []
+
+    last_date = date.fromisoformat(last_date_str)
+    first_date = date.fromisoformat(first_date_str)
+
+    window_days = _TIMEFRAME_DAYS.get(timeframe, 30)
+    current_start_date = max(first_date, last_date - timedelta(days=window_days - 1))
+    current_start = current_start_date.isoformat()
+    current_end = last_date.isoformat()
+
+    previous_end_date = current_start_date - timedelta(days=1)
+    previous_start_date = max(first_date, previous_end_date - timedelta(days=window_days - 1))
+    if previous_start_date <= previous_end_date and previous_end_date >= first_date:
+        previous_start = previous_start_date.isoformat()
+        previous_end = previous_end_date.isoformat()
+    else:
+        conn.close()
+        return []
+
+    service_rows = _fetch_all(conn, """
+        SELECT ServiceName, SUM(PreTaxCost) AS total
+        FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?
+        GROUP BY ServiceName ORDER BY total DESC
+    """, (current_start, current_end))
+
+    prev_service_rows = _fetch_all(conn, """
+        SELECT ServiceName, SUM(PreTaxCost) AS total
+        FROM CloudCosts WHERE UsageDate >= ? AND UsageDate <= ?
+        GROUP BY ServiceName
+    """, (previous_start, previous_end))
+    prev_by_service = {r["servicename"]: r["total"] for r in prev_service_rows}
+
+    conn.close()
+
+    spikes = []
+    for r in service_rows:
+        prev_val = prev_by_service.get(r["servicename"])
+        if prev_val and prev_val > 0:
+            change_pct = (r["total"] - prev_val) / prev_val * 100
+            if change_pct > 5:
+                spikes.append({
+                    "service_name": r["servicename"], "change_pct": round(change_pct, 1),
+                    "current_total": r["total"], "delta": round(r["total"] - prev_val, 2),
+                })
+    spikes.sort(key=lambda s: s["change_pct"], reverse=True)
+    return spikes[:3]
+
+
 def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: int = None) -> dict:
-    """Dashboard'daki zaman aralığı dropdown'ı için ANA fonksiyon.
-
-    timeframe değerleri:
-      "30d" -> son 30 gün (dropdown: "Son 30 gün")
-      "3m"  -> son 90 gün (dropdown: "Son 3 Ay")
-      "6m"  -> son 180 gün (dropdown: "Son 6 Ay")
-      "12m" -> son 365 gün (dropdown: "Son 12 Ay")
-      "all" -> veri setindeki İLK gün ile SON gün arası (dropdown: "Tüm Zamanlar")
-
-    "all" seçeneğinde önceki bir dönemle karşılaştırma YAPILAMAZ (zaten
-    tüm veri gösteriliyor) -- bu durumda previous_total, delta_amount,
-    cost_change_pct alanları None döner; frontend bu None durumunu
-    "karşılaştırma verisi yok" olarak göstermelidir.
-
-    Ayrıca dönemden BAĞIMSIZ olarak, veri setinin en son GÜNÜNÜN
-    (today_date) toplam maliyetini (today_cost) her zaman döndürür --
-    Dashboard'daki sabit "Bugünkü Maliyet" kartı için.
-    """
+    """Dashboard'daki zaman aralığı dropdown'ı için ANA fonksiyon."""
     conn = get_connection()
 
     last_date_row = conn.execute("SELECT MAX(UsageDate) AS d FROM CloudCosts").fetchone()
@@ -423,6 +460,23 @@ def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: in
         current_end = last_date.isoformat()
         previous_start = None
         previous_end = None
+    elif timeframe == "this_month":
+        month_start_date = max(first_date, last_date.replace(day=1))
+        current_start = month_start_date.isoformat()
+        current_end = last_date.isoformat()
+
+        days_into_month = (last_date - month_start_date).days + 1
+        if last_date.month == 1:
+            prev_month_start = last_date.replace(year=last_date.year - 1, month=12, day=1)
+        else:
+            prev_month_start = last_date.replace(month=last_date.month - 1, day=1)
+        prev_month_end_date = prev_month_start + timedelta(days=days_into_month - 1)
+        if prev_month_start >= first_date:
+            previous_start = prev_month_start.isoformat()
+            previous_end = prev_month_end_date.isoformat()
+        else:
+            previous_start = None
+            previous_end = None
     else:
         window_days = _TIMEFRAME_DAYS.get(timeframe, 30)
         current_start_date = max(first_date, last_date - timedelta(days=window_days - 1))
@@ -435,8 +489,6 @@ def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: in
             previous_start = previous_start_date.isoformat()
             previous_end = previous_end_date.isoformat()
         else:
-            # Veri seti, karşılaştırma için gereken önceki pencereyi
-            # kapsamıyor (ör. "12 Ay" seçilmiş ama elimizde sadece 12 ay var)
             previous_start = None
             previous_end = None
 
@@ -465,20 +517,27 @@ def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: in
     pending_count = rec_row["cnt"]
     potential_savings = rec_row["total"]
 
-    resource_count = conn.execute("SELECT COUNT(DISTINCT ResourceId) AS cnt FROM CloudCosts").fetchone()["cnt"]
+    resource_count = conn.execute("SELECT COUNT(DISTINCT ResourceName) AS cnt FROM CloudCosts").fetchone()["cnt"]
+    service_count = conn.execute("SELECT COUNT(DISTINCT ServiceName) AS cnt FROM CloudCosts").fetchone()["cnt"]
+    group_count = conn.execute("SELECT COUNT(DISTINCT ResourceGroup) AS cnt FROM CloudCosts").fetchone()["cnt"]
 
-    # Dönemden BAĞIMSIZ: veri setinin en son GÜNÜNÜN toplam maliyeti --
-    # Dashboard'daki sabit "Bugünkü Maliyet" kartı için, dropdown'daki
-    # seçime bakılmaksızın her zaman aynı (en güncel) tek günü gösterir.
     today_row = conn.execute(
         "SELECT COALESCE(SUM(PreTaxCost), 0) AS t FROM CloudCosts WHERE UsageDate = ?",
         (last_date_str,),
     ).fetchone()
     today_cost = today_row["t"]
 
-    # Trend grafiği: aralık 60 günden uzunsa GÜNLÜK yerine AYLIK
-    # gruplama yapılıyor -- aksi hâlde "Tüm Zamanlar" (365+ gün) trend
-    # grafiğinde yüzlerce nokta olur, okunmaz hâle gelir.
+    is_today = (last_date_str == datetime.now().strftime("%Y-%m-%d"))
+    today_data_may_be_incomplete = False
+    if is_today:
+        sync_interval_hours = int(os.getenv("AZURE_SYNC_INTERVAL_HOURS", "4"))
+        expected_daily_syncs = max(1, 24 // sync_interval_hours)
+        today_sync_count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM SyncLog WHERE SyncedAt::date = CURRENT_DATE"
+        ).fetchone()
+        today_sync_count = today_sync_count_row["cnt"]
+        today_data_may_be_incomplete = today_sync_count < expected_daily_syncs
+
     span_days = (date.fromisoformat(current_end) - date.fromisoformat(current_start)).days
     if span_days > 60:
         trend = _fetch_all(conn, f"""
@@ -596,12 +655,15 @@ def get_period_summary(timeframe: str = "30d", language: str = "tr", user_id: in
         "total_cost": round(total_cost, 2),
         "previous_total": round(prev_cost, 2) if prev_cost is not None else None,
         "delta_amount": delta_amount,
-        "cost_change_pct": round(cost_change_pct, 1) if cost_change_pct is not None else None,
+        "cost_change_pct": round(cost_change_pct, 3) if cost_change_pct is not None else None,
         "potential_savings": round(potential_savings, 2),
         "pending_recommendations": pending_count,
         "resource_count": resource_count,
+        "service_count": service_count,
+        "group_count": group_count,
         "today_cost": round(today_cost, 2),
         "today_date": last_date_str,
+        "today_data_may_be_incomplete": today_data_may_be_incomplete,
         "trend": [{"month": t["month"], "total": round(t["total"], 2)} for t in trend],
         "service_breakdown": service_breakdown,
         "category_breakdown": category_breakdown,
@@ -620,13 +682,6 @@ def get_finops_score(language: str = "tr", user_id: int = None) -> dict:
     total_row = conn.execute("SELECT SUM(PreTaxCost) AS t FROM CloudCosts").fetchone()
     total_cost = total_row["t"] or 0
 
-    # NOT: "Rezervasyon kullanımı" kontrolü kaldırıldı -- bu veri setinde
-    # ServiceName/MeterCategory hiçbir zaman "Reservations" olarak
-    # ETİKETLENMİYOR (kullanıcı testinde doğrulandı, eşleşme sıfır
-    # çıktı), bu yüzden bu kontrol HER ZAMAN aynı sonucu verip anlamsız
-    # bir madde hâline geliyordu. Yerine, veri setinde GERÇEKTEN test
-    # edilmiş, hem "iyi" hem "kötü" çıkabilen bir kontrol konuldu:
-    # kaç kaynağın HİÇ maliyet üretmediği (bugünkü test: %16.54).
     zero_cost_resource_rows = conn.execute("""
         SELECT ResourceName FROM CloudCosts
         GROUP BY ResourceName HAVING SUM(PreTaxCost) = 0
@@ -743,4 +798,167 @@ def get_finops_score(language: str = "tr", user_id: int = None) -> dict:
             {"ok": c["ok"], "label": c["label_tr"] if language != "en" else c["label_en"], "details": c.get("details", [])}
             for c in checks
         ],
+    }
+
+
+# ============================== COST ANALYZER ==============================
+# Amnic'in "Cost Analyzer" sayfasından ilham alınmıştır -- ama CostBot'a
+# uyarlanmıştır: AWS/GCP/Kubernetes sekmeleri ve "Cost Allocation
+# Dimensions" (etiket bazlı, ileri seviye) BİLİNÇLİ OLARAK dışarıda
+# bırakılmıştır. "Gruplamadan (Toplam)" + esnek GROUP BY (4 boyut) +
+# FİLTRE (3 boyut) + dinamik zaman serisi grafiği sunar.
+
+_GROUP_BY_COLUMNS = {
+    "service": "ServiceName",
+    "resource_group": "ResourceGroup",
+    "region": "ResourceLocation",
+    "category": None,  # özel işlem gerektiriyor, _SERVICE_CATEGORY ile eşleniyor
+}
+
+
+def get_cost_analyzer_data(
+    group_by: str = "service",
+    granularity: str = "day",
+    start_date: str = None,
+    end_date: str = None,
+    filter_service: str = None,
+    filter_resource_group: str = None,
+    filter_region: str = None,
+    language: str = "tr",
+) -> dict:
+    """Amnic'teki 'Cost Analyzer' benzeri esnek analiz verisi üretir --
+    kullanıcının seçtiği boyutta gruplama + isteğe bağlı filtrelerle,
+    hem zaman serisi (stacked bar için) hem tablo verisi döndürür."""
+    conn = get_connection()
+
+    if not start_date or not end_date:
+        bounds = conn.execute("SELECT MIN(UsageDate) AS mn, MAX(UsageDate) AS mx FROM CloudCosts").fetchone()
+        start_date = start_date or bounds["mn"]
+        end_date = end_date or bounds["mx"]
+    
+    if not start_date or not end_date:
+        bounds = conn.execute("SELECT MIN(UsageDate) AS mn, MAX(UsageDate) AS mx FROM CloudCosts").fetchone()
+        start_date = start_date or bounds["mn"]
+        end_date = end_date or bounds["mx"]
+
+    # Dashboard'daki AYNI mantık: veri setindeki en son gün, gerçek
+    # bugünün tarihiyle aynıysa VE bugün için beklenen sayıda
+    # senkronizasyon turu henüz tamamlanmadıysa, o günün verisi
+    # eksik sayılır (bkz. get_period_summary).
+    last_data_date_row = conn.execute("SELECT MAX(UsageDate) AS d FROM CloudCosts").fetchone()
+    last_data_date = last_data_date_row["d"]
+    today_data_may_be_incomplete = False
+    if last_data_date == datetime.now().strftime("%Y-%m-%d") and last_data_date <= end_date:
+        sync_interval_hours = int(os.getenv("AZURE_SYNC_INTERVAL_HOURS", "4"))
+        expected_daily_syncs = max(1, 24 // sync_interval_hours)
+        today_sync_count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM SyncLog WHERE SyncedAt::date = CURRENT_DATE"
+        ).fetchone()
+        today_data_may_be_incomplete = today_sync_count_row["cnt"] < expected_daily_syncs
+
+    where_clauses = ["UsageDate >= ?", "UsageDate <= ?"]
+    params = [start_date, end_date]
+    if filter_service:
+        where_clauses.append("ServiceName = ?")
+        params.append(filter_service)
+    if filter_resource_group:
+        where_clauses.append("ResourceGroup = ?")
+        params.append(filter_resource_group)
+    if filter_region:
+        where_clauses.append("ResourceLocation = ?")
+        params.append(filter_region)
+    where_sql = " AND ".join(where_clauses)
+
+    date_expr = _MONTH_EXPR if granularity == "month" else _WEEK_EXPR if granularity == "week" else "UsageDate"
+    other_label = "Diğer" if language != "en" else "Other"
+
+    if group_by == "none":
+        # Hiçbir boyuta göre kırılım yapmadan, sadece TOPLAM maliyeti
+        # tek bir seri olarak göster.
+        total_label = "Toplam" if language != "en" else "Total"
+        raw_rows = _fetch_all(conn, f"""
+            SELECT {date_expr} AS period, SUM(PreTaxCost) AS total
+            FROM CloudCosts WHERE {where_sql}
+            GROUP BY period ORDER BY period ASC
+        """, tuple(params))
+        by_period_group: dict[str, dict[str, float]] = {r["period"]: {total_label: r["total"]} for r in raw_rows}
+        group_totals: dict[str, float] = {total_label: sum(r["total"] for r in raw_rows)}
+    elif group_by == "category":
+        # Kategori, ServiceName -> _SERVICE_CATEGORY eşlemesiyle Python
+        # tarafında hesaplanıyor (SQL'de doğrudan karşılığı yok).
+        raw_rows = _fetch_all(conn, f"""
+            SELECT {date_expr} AS period, ServiceName, SUM(PreTaxCost) AS total
+            FROM CloudCosts WHERE {where_sql}
+            GROUP BY period, ServiceName ORDER BY period ASC
+        """, tuple(params))
+        by_period_group = {}
+        group_totals = {}
+        for r in raw_rows:
+            cat = _SERVICE_CATEGORY.get(r["servicename"], "Diğer")
+            cat = _translate_category(cat, language)
+            by_period_group.setdefault(r["period"], {})
+            by_period_group[r["period"]][cat] = by_period_group[r["period"]].get(cat, 0) + r["total"]
+            group_totals[cat] = group_totals.get(cat, 0) + r["total"]
+    else:
+        column = _GROUP_BY_COLUMNS[group_by]
+        raw_rows = _fetch_all(conn, f"""
+            SELECT {date_expr} AS period, {column} AS grp, SUM(PreTaxCost) AS total
+            FROM CloudCosts WHERE {where_sql}
+            GROUP BY period, grp ORDER BY period ASC
+        """, tuple(params))
+        by_period_group = {}
+        group_totals = {}
+        for r in raw_rows:
+            grp = r["grp"] or other_label
+            by_period_group.setdefault(r["period"], {})
+            by_period_group[r["period"]][grp] = by_period_group[r["period"]].get(grp, 0) + r["total"]
+            group_totals[grp] = group_totals.get(grp, 0) + r["total"]
+
+    # En yüksek 8 grubu göster, gerisini "Diğer"e topla (grafik kalabalık olmasın)
+    top_groups = sorted(group_totals.items(), key=lambda kv: kv[1], reverse=True)[:8]
+    top_group_names = [g[0] for g in top_groups]
+
+    chart_data = []
+    for period in sorted(by_period_group.keys()):
+        row = {"period": period}
+        other_total = 0.0
+        for grp, total in by_period_group[period].items():
+            if grp in top_group_names:
+                row[grp] = round(total, 2)
+            else:
+                other_total += total
+        for grp in top_group_names:
+            row.setdefault(grp, 0.0)
+        if other_total > 0:
+            row[other_label] = round(row.get(other_label, 0.0) + other_total, 2)
+        chart_data.append(row)
+
+    table_rows = [
+        {"group": name, "total": round(total, 2)}
+        for name, total in sorted(group_totals.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+
+    filter_options = {
+        "services": [r["servicename"] for r in _fetch_all(conn, "SELECT DISTINCT ServiceName FROM CloudCosts ORDER BY ServiceName")],
+        "resource_groups": [r["resourcegroup"] for r in _fetch_all(conn, "SELECT DISTINCT ResourceGroup FROM CloudCosts ORDER BY ResourceGroup")],
+        "regions": [r["resourcelocation"] for r in _fetch_all(conn, "SELECT DISTINCT ResourceLocation FROM CloudCosts ORDER BY ResourceLocation")],
+    }
+
+    conn.close()
+
+    groups_list = list(top_group_names)
+    if other_label not in groups_list and any(other_label in r for r in chart_data):
+        groups_list.append(other_label)
+
+    return {
+        "group_by": group_by,
+        "start_date": start_date,
+        "end_date": end_date,
+        "groups": groups_list,
+        "chart_data": chart_data,
+        "table_rows": table_rows,
+        "total_cost": round(sum(group_totals.values()), 2),
+        "filter_options": filter_options,
+        "today_data_may_be_incomplete": today_data_may_be_incomplete,
+        "last_data_date": last_data_date,
     }

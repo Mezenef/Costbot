@@ -21,6 +21,7 @@ import logging
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from datetime import date as _date
 from .database import get_connection
 from .dashboard import get_dashboard_summary
 from .email_service import send_cost_alert_email, EmailNotConfiguredError, EmailSendError
@@ -108,6 +109,63 @@ def _check_forecast_threshold() -> None:
 
         _log_notified(marker, period, estimated)
 
+def _send_scheduled_reports() -> None:
+    """Her saat kontrol edilir: ScheduledReports tablosundaki her kayıt
+    için, BUGÜN 'gönderilmesi gereken gün' mü VE şu anki saat
+    'TimeOfDay'e eşit ya da geçmiş mi kontrol edilir. Aynı dönem için
+    (LastSentDate ile) TEKRAR gönderim engellenir."""
+    from .report import generate_pdf_report
+    from .email_service import send_report_email
+
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    current_hm = now.strftime("%H:%M")
+
+    conn = get_connection()
+    schedules = conn.execute(
+        'SELECT ScheduleId AS "ScheduleId", UserId AS "UserId", Granularity AS "Granularity", '
+        'DayOfWeek AS "DayOfWeek", DayOfMonth AS "DayOfMonth", TimeOfDay AS "TimeOfDay", '
+        'Recipients AS "Recipients", Language AS "Language", LastSentDate AS "LastSentDate" '
+        'FROM ScheduledReports WHERE Enabled = 1'
+    ).fetchall()
+
+    for sched in schedules:
+        # Bugün "gönderilmesi gereken gün" mü kontrol et.
+        is_due_today = False
+        if sched["Granularity"] == "week":
+            is_due_today = (sched["DayOfWeek"] == now.isoweekday())
+        elif sched["Granularity"] in ("month", "this_month"):
+            is_due_today = (sched["DayOfMonth"] == now.day)
+        elif sched["Granularity"] == "day":
+            is_due_today = True
+
+        if not is_due_today:
+            continue
+        if sched["LastSentDate"] == today_str:
+            continue  # bugün zaten gönderildi
+        if current_hm < sched["TimeOfDay"]:
+            continue  # henüz saati gelmedi
+
+        recipients = [r.strip() for r in (sched["Recipients"] or "").split(",") if r.strip()]
+        if not recipients:
+            continue
+
+        try:
+            pdf_bytes = generate_pdf_report(
+                language=sched["Language"], user_id=sched["UserId"], granularity=sched["Granularity"]
+            )
+            send_report_email(recipients, pdf_bytes, sched["Language"])
+            conn.execute(
+                "UPDATE ScheduledReports SET LastSentDate = ? WHERE ScheduleId = ?",
+                (today_str, sched["ScheduleId"]),
+            )
+            conn.commit()
+            logger.info("Zamanlanmış rapor gönderildi: user_id=%s, alıcılar=%s", sched["UserId"], recipients)
+        except Exception as e:
+            logger.error("Zamanlanmış rapor gönderilemedi (user_id=%s): %s", sched["UserId"], e)
+
+    conn.close()
+
 def _sync_azure_data() -> None:
     """Günde bir kez (varsayılan), gerçek Azure Cost Management verisini
     yeniden çeker ve CloudCosts tablosunu günceller. Azure kimlik bilgileri
@@ -125,7 +183,7 @@ def _sync_azure_data() -> None:
         from .azure_cost_fetcher import fetch_azure_cost_rows
         from .database import load_from_azure
 
-        days = int(os.getenv("AZURE_SYNC_DAYS", "30"))
+        days = int(os.getenv("AZURE_SYNC_DAYS", "4"))
         rows = fetch_azure_cost_rows(tenant_id, client_id, client_secret, subscription_id, days=days)
 
         from datetime import date, timedelta
@@ -134,6 +192,11 @@ def _sync_azure_data() -> None:
 
         conn = get_connection()
         stats = load_from_azure(conn, rows, start_date=start_date, end_date=end_date)
+        conn.execute(
+            "INSERT INTO SyncLog (RowsInserted) VALUES (?)",
+            (stats["inserted"],),
+        )
+        conn.commit()
         conn.close()
 
         logger.info("Azure verisi otomatik güncellendi: %s satır yüklendi.", stats["inserted"])
@@ -195,6 +258,15 @@ def _daily_job() -> None:
     check_and_notify()
 
 
+def _hourly_job() -> None:
+    """Saatte bir çalışır -- zamanlanmış raporların gönderilme vakti
+    gelip gelmediğini kontrol eder. Ana senkronizasyon işinden (4 saatte
+    bir) AYRI ve daha SIK çalışır, çünkü kullanıcı "09:00'da gönder"
+    dediğinde bu saatin doğru yakalanabilmesi için saatlik kontrol
+    gerekir."""
+    _send_scheduled_reports()
+
+
 def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
@@ -209,6 +281,7 @@ def start_scheduler() -> None:
     # Şimdilik normal "interval" davranışına dönüldü: ilk çalıştırma,
     # backend açıldıktan "sync_hours" saat SONRA gerçekleşir.
     _scheduler.add_job(_daily_job, "interval", hours=sync_hours)
+    _scheduler.add_job(_hourly_job, "interval", hours=1)
 
     _scheduler.start()
     print(f"[scheduler] Zamanlanmış görev başlatıldı ({sync_hours} saatte bir: Azure senkronizasyonu + uyarı kontrolü).")

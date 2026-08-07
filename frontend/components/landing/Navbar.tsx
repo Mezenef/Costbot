@@ -15,7 +15,7 @@ export default function Navbar() {
   return (
     <nav className="flex items-center justify-between px-6 md:px-12 py-5 max-w-7xl mx-auto">
       <div className="flex items-center gap-2 font-bold text-lg text-white">
-        <Logo size={36} forceWhite />
+        <Logo size={53} forceWhite />
         CostBot
       </div>
       <div className="hidden md:flex items-center gap-8 text-sm text-gray-300">

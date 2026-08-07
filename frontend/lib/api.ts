@@ -136,8 +136,12 @@ export interface DashboardSummary {
   potential_savings: number;
   pending_recommendations: number;
   resource_count: number;
+  service_count?: number;
+  group_count?: number;
   today_cost: number;
   today_date: string | null;
+  today_data_may_be_incomplete?: boolean;
+  
   trend: { month: string; total: number }[];
   service_breakdown: { name: string; total: number; pct: number }[];
   top_resource_groups: {
@@ -155,7 +159,7 @@ export async function getDashboardSummary(language: string = "tr", userId?: numb
   return res.json();
 }
 
-export type DashboardTimeframe = "daily" | "30d" | "3m" | "6m" | "12m" | "all";
+export type DashboardTimeframe = "daily" | "30d" | "this_month" | "3m" | "6m" | "12m" | "all";
 
 export async function getDashboardPeriodSummary(
   timeframe: DashboardTimeframe,
@@ -296,6 +300,63 @@ export interface ReportHistoryItem {
   GeneratedDate: string;
   Period: string;
   Language: string;
+}
+export interface ScheduledReport {
+  ScheduleId: number;
+  Name: string | null;
+  Enabled: boolean;
+  Granularity: "day" | "week" | "this_month" | "month";
+  DayOfWeek: number | null;
+  DayOfMonth: number | null;
+  TimeOfDay: string;
+  recipients: string[];
+  Language: string;
+}
+
+export interface ScheduledReportInput {
+  name: string | null;
+  enabled: boolean;
+  granularity: string;
+  day_of_week: number | null;
+  day_of_month: number | null;
+  time_of_day: string;
+  recipients: string[];
+  language: string;
+}
+
+export async function listScheduledReports(userId: number): Promise<ScheduledReport[]> {
+  const res = await fetch(`${API_URL}/reports/schedules?user_id=${userId}`);
+  if (!res.ok) throw new Error("Zamanlanmış raporlar alınamadı.");
+  return res.json();
+}
+
+export async function createScheduledReport(userId: number, body: ScheduledReportInput): Promise<void> {
+  const res = await fetch(`${API_URL}/reports/schedules?user_id=${userId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Zamanlanmış rapor oluşturulamadı.");
+  }
+}
+
+export async function updateScheduledReport(userId: number, scheduleId: number, body: ScheduledReportInput): Promise<void> {
+  const res = await fetch(`${API_URL}/reports/schedules/${scheduleId}?user_id=${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Zamanlanmış rapor güncellenemedi.");
+  }
+}
+
+export async function deleteScheduledReport(userId: number, scheduleId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/reports/schedules/${scheduleId}?user_id=${userId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Zamanlanmış rapor silinemedi.");
 }
 
 export async function getReportHistory(userId: number): Promise<ReportHistoryItem[]> {
@@ -527,4 +588,44 @@ export function formatChartDateLabel(raw: string): string {
     return `${m}-${y}`;
   }
   return raw;
+}
+
+export interface CostAnalyzerData {
+  group_by: string;
+  start_date: string;
+  end_date: string;
+  groups: string[];
+  chart_data: Record<string, any>[];
+  table_rows: { group: string; total: number }[];
+  total_cost: number;
+  filter_options: {
+    services: string[];
+    resource_groups: string[];
+    regions: string[];
+  };
+}
+
+export async function getCostAnalyzerData(params: {
+  groupBy: string;
+  granularity: string;
+  startDate?: string;
+  endDate?: string;
+  filterService?: string;
+  filterResourceGroup?: string;
+  filterRegion?: string;
+  language: string;
+}): Promise<CostAnalyzerData> {
+  const qs = new URLSearchParams();
+  qs.set("group_by", params.groupBy);
+  qs.set("granularity", params.granularity);
+  qs.set("language", params.language);
+  if (params.startDate) qs.set("start_date", params.startDate);
+  if (params.endDate) qs.set("end_date", params.endDate);
+  if (params.filterService) qs.set("filter_service", params.filterService);
+  if (params.filterResourceGroup) qs.set("filter_resource_group", params.filterResourceGroup);
+  if (params.filterRegion) qs.set("filter_region", params.filterRegion);
+
+  const res = await fetch(`${API_URL}/cost-analyzer?${qs.toString()}`);
+  if (!res.ok) throw new Error("Cost Analyzer verisi alınamadı.");
+  return res.json();
 }

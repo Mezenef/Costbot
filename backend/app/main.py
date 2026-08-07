@@ -25,7 +25,7 @@ from .security import RequestIDMiddleware, SecurityHeadersMiddleware, global_exc
 
 from fastapi import FastAPI, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from fastapi.responses import StreamingResponse
 from . import sql_agent
 from . import auth
@@ -38,6 +38,7 @@ from .email_service import send_cost_alert_email, EmailNotConfiguredError, Email
 from .teams_service import send_teams_notification, get_teams_recipients, TeamsNotConfiguredError, TeamsSendError
 from .scheduler import start_scheduler, check_and_notify
 from . import forecast
+import re
 
 WORKING_CSV = Path(__file__).parent.parent / "data" / "azure_cost_mock_data_WORKING.csv"
 DB_PATH = Path(__file__).parent.parent / "data" / "costbot.db"
@@ -121,6 +122,17 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=8)
     role: str = Field(default="Kullanıcı")
 
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Şifre en az 1 büyük harf içermelidir.")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Şifre en az 1 küçük harf içermelidir.")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Şifre en az 1 rakam içermelidir.")
+        return v
+
 
 class LoginRequest(BaseModel):
     email: str
@@ -140,6 +152,17 @@ class ResetPasswordRequest(BaseModel):
     email: str
     code: str = Field(..., min_length=6, max_length=6)
     new_password: str = Field(..., min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Şifre en az 1 büyük harf içermelidir.")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Şifre en az 1 küçük harf içermelidir.")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Şifre en az 1 rakam içermelidir.")
+        return v
 
 
 class SendAlertRequest(BaseModel):
@@ -169,6 +192,17 @@ class BudgetThresholdUpdate(BaseModel):
 
 class TeamsWebhookUpdate(BaseModel):
     webhook_url: str | None = Field(default=None, description="Kullanıcının kendi Teams webhook adresi. None = kaldırılır.")
+
+
+class ScheduledReportUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    enabled: bool = True
+    granularity: str = Field(default="week", pattern="^(day|week|this_month|month)$")
+    day_of_week: int | None = Field(default=None, ge=1, le=7, description="1=Pazartesi, 7=Pazar (haftalık için)")
+    day_of_month: int | None = Field(default=None, ge=1, le=28, description="Ayın günü (aylık için)")
+    time_of_day: str = Field(default="09:00", pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$")
+    recipients: list[str] = Field(default_factory=list)
+    language: str = Field(default="tr", pattern="^(tr|en)$")
 
 
 class UserOut(BaseModel):
@@ -206,7 +240,7 @@ def dashboard_summary(language: str = "tr", user_id: int | None = None):
 
 @app.get("/dashboard/period-summary")
 def dashboard_period_summary(timeframe: str = "30d", language: str = "tr", user_id: int | None = None):
-    allowed = {"daily", "7d", "30d", "3m", "6m", "12m", "all"}
+    allowed = {"daily", "7d", "30d", "this_month", "3m", "6m", "12m", "all"}
     if timeframe not in allowed:
         raise HTTPException(status_code=400, detail=f"Geçersiz timeframe. İzin verilenler: {', '.join(sorted(allowed))}")
     return dashboard.get_period_summary(timeframe=timeframe, language=language, user_id=user_id)
@@ -220,8 +254,7 @@ def send_alert_email(body: SendAlertRequest):
         conn.close()
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
 
-    summary = dashboard.get_period_summary(timeframe="30d", language=body.language, user_id=body.user_id)
-    spikes = summary["cost_spikes"]
+    spikes = dashboard.get_cost_spikes_only(timeframe="30d", language=body.language)
     if body.service_name:
         spikes = [s for s in spikes if s["service_name"] == body.service_name]
     conn.close()
@@ -255,8 +288,7 @@ def send_teams_alert(body: SendTeamsAlertRequest):
         raise HTTPException(status_code=400, detail="Teams webhook adresiniz tanımlı değil. Lütfen Ayarlar sayfasından ekleyin.")
     webhook_url = user_row["TeamsWebhookUrl"]
 
-    summary = dashboard.get_period_summary(timeframe="30d", language=body.language, user_id=body.user_id)
-    spikes = summary["cost_spikes"]
+    spikes = dashboard.get_cost_spikes_only(timeframe="30d", language=body.language)
     if body.service_name:
         spikes = [s for s in spikes if s["service_name"] == body.service_name]
 
@@ -284,6 +316,34 @@ def list_resources(search: str = "", limit: int = 50, offset: int = 0):
 def service_breakdown_by_period(granularity: str = "month", language: str = "tr"):
     return dashboard.get_service_breakdown_by_period(granularity=granularity, language=language)
 
+@app.get("/cost-analyzer")
+def cost_analyzer(
+    group_by: str = "service",
+    granularity: str = "day",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    filter_service: str | None = None,
+    filter_resource_group: str | None = None,
+    filter_region: str | None = None,
+    language: str = "tr",
+):
+    allowed_group_by = {"none", "service", "resource_group", "region", "category"}
+    if group_by not in allowed_group_by:
+        raise HTTPException(status_code=400, detail=f"Geçersiz group_by. İzin verilenler: {', '.join(sorted(allowed_group_by))}")
+    allowed_granularity = {"day", "week", "month"}
+    if granularity not in allowed_granularity:
+        raise HTTPException(status_code=400, detail=f"Geçersiz granularity. İzin verilenler: {', '.join(sorted(allowed_granularity))}")
+
+    return dashboard.get_cost_analyzer_data(
+        group_by=group_by,
+        granularity=granularity,
+        start_date=start_date,
+        end_date=end_date,
+        filter_service=filter_service,
+        filter_resource_group=filter_resource_group,
+        filter_region=filter_region,
+        language=language,
+    )
 
 @app.get("/dashboard/resource-group/{group_name}")
 def resource_group_detail(group_name: str, language: str = "tr"):
@@ -590,6 +650,8 @@ def sync_real_azure_data(days: int = 30):
 
     conn = get_connection()
     stats = load_from_azure(conn, rows)
+    conn.execute("INSERT INTO SyncLog (RowsInserted) VALUES (?)", (stats["inserted"],))
+    conn.commit()
     conn.close()
 
     return {"source": "azure_live", "days": days, **stats}
@@ -615,6 +677,8 @@ def sync_real_azure_data_range(start_date: str, end_date: str):
 
     conn = get_connection()
     stats = load_from_azure(conn, rows, start_date=start_date, end_date=end_date)
+    conn.execute("INSERT INTO SyncLog (RowsInserted) VALUES (?)", (stats["inserted"],))
+    conn.commit()
     conn.close()
 
     return {"source": "azure_live", "start_date": start_date, "end_date": end_date, **stats}
@@ -683,3 +747,119 @@ def update_teams_webhook(user_id: int, body: TeamsWebhookUpdate):
     conn.commit()
     conn.close()
     return {"webhook_url": body.webhook_url}
+
+
+# ============================================================
+# Zamanlanmış Raporlar (Scheduled Reports) -- kullanıcı başına
+# en fazla _MAX_SCHEDULED_REPORTS_PER_USER kayıt (ör. hem
+# haftalık hem aylık, her biri kendi alıcı listesiyle).
+# ============================================================
+_MAX_SCHEDULED_REPORTS_PER_USER = 5
+
+
+@app.get("/reports/schedules")
+def list_scheduled_reports(user_id: int):
+    conn = get_connection()
+    rows = conn.execute(
+        'SELECT ScheduleId AS "ScheduleId", Name AS "Name", Enabled AS "Enabled", Granularity AS "Granularity", '
+        'DayOfWeek AS "DayOfWeek", DayOfMonth AS "DayOfMonth", TimeOfDay AS "TimeOfDay", '
+        'Recipients AS "Recipients", Language AS "Language" '
+        'FROM ScheduledReports WHERE UserId = ? ORDER BY ScheduleId ASC',
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["recipients"] = item["Recipients"].split(",") if item["Recipients"] else []
+        result.append(item)
+    return result
+
+
+def _validate_schedule_body(body: ScheduledReportUpdate):
+    if body.granularity == "week" and body.day_of_week is None:
+        raise HTTPException(status_code=400, detail="Haftalık rapor için gün seçilmeli.")
+    if body.granularity in ("month", "this_month") and body.day_of_month is None:
+        raise HTTPException(status_code=400, detail="Aylık rapor için ayın günü seçilmeli.")
+    if not body.recipients:
+        raise HTTPException(status_code=400, detail="En az bir alıcı e-posta adresi girilmeli.")
+
+
+@app.post("/reports/schedules")
+def create_scheduled_report(user_id: int, body: ScheduledReportUpdate):
+    _validate_schedule_body(body)
+
+    conn = get_connection()
+    count_row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM ScheduledReports WHERE UserId = ?", (user_id,)
+    ).fetchone()
+    if count_row["cnt"] >= _MAX_SCHEDULED_REPORTS_PER_USER:
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail=f"En fazla {_MAX_SCHEDULED_REPORTS_PER_USER} zamanlanmış rapor oluşturabilirsiniz.",
+        )
+
+    recipients_str = ",".join(r.strip() for r in body.recipients if r.strip())
+    conn.execute(
+        "INSERT INTO ScheduledReports (UserId, Name, Enabled, Granularity, DayOfWeek, DayOfMonth, TimeOfDay, Recipients, Language) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, body.name, int(body.enabled), body.granularity, body.day_of_week, body.day_of_month,
+         body.time_of_day, recipients_str, body.language),
+    )
+    conn.commit()
+    conn.close()
+    return {"created": True}
+
+
+@app.put("/reports/schedules/{schedule_id}")
+def update_scheduled_report(schedule_id: int, user_id: int, body: ScheduledReportUpdate):
+    _validate_schedule_body(body)
+
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT ScheduleId FROM ScheduledReports WHERE ScheduleId = ? AND UserId = ?",
+        (schedule_id, user_id),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Zamanlanmış rapor bulunamadı")
+
+    recipients_str = ",".join(r.strip() for r in body.recipients if r.strip())
+    conn.execute(
+        "UPDATE ScheduledReports SET Name = ?, Enabled = ?, Granularity = ?, DayOfWeek = ?, DayOfMonth = ?, "
+        "TimeOfDay = ?, Recipients = ?, Language = ? WHERE ScheduleId = ?",
+        (body.name, int(body.enabled), body.granularity, body.day_of_week, body.day_of_month,
+         body.time_of_day, recipients_str, body.language, schedule_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"updated": True}
+
+
+@app.delete("/reports/schedules/{schedule_id}")
+def delete_scheduled_report(schedule_id: int, user_id: int):
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT ScheduleId FROM ScheduledReports WHERE ScheduleId = ? AND UserId = ?",
+        (schedule_id, user_id),
+    ).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Zamanlanmış rapor bulunamadı")
+    conn.execute("DELETE FROM ScheduledReports WHERE ScheduleId = ?", (schedule_id,))
+    conn.commit()
+    conn.close()
+    return {"deleted": True}
+
+
+@app.post("/reports/schedule/check-now")
+def scheduled_reports_check_now():
+    """Test/manuel tetikleme -- normalde saatte bir çalışan zamanlanmış
+    rapor kontrolünü hemen çalıştırır. NOT: Bu, day_of_week/day_of_month
+    ve saat kontrolünü ATLAMAZ -- sadece "1 saat bekleme" süresini
+    atlar. Yani gerçek bir gönderim görmek için, zamanladığın gün/saat
+    hâlâ doğru olmalı (ör. bugünün günü + saat geçmiş olmalı)."""
+    from .scheduler import _send_scheduled_reports
+    _send_scheduled_reports()
+    return {"status": "checked"}

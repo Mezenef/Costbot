@@ -16,6 +16,7 @@ import re
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from email.utils import formataddr
 
 
@@ -163,3 +164,85 @@ def send_password_reset_email(to_email: str, full_name: str, code: str) -> None:
         f"— CostBot"
     )
     send_email(to_email, subject, body_html, body_text)
+
+def send_email_with_attachment(
+    to_emails: list[str], subject: str, body_html: str, body_text: str,
+    attachment_bytes: bytes, attachment_filename: str,
+) -> None:
+    """send_email()'in PDF/dosya EKİ gönderebilen versiyonu -- zamanlanmış
+    raporlar (ScheduledReports) için kullanılır. Birden fazla alıcıya
+    TEK bir e-postada (Cc değil, To listesi olarak) gönderir."""
+    host = os.getenv("SMTP_HOST")
+    port = os.getenv("SMTP_PORT")
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASSWORD")
+    from_addr = os.getenv("SMTP_FROM", user)
+
+    if not all([host, port, user, password]):
+        raise EmailNotConfiguredError(
+            "SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD .env dosyasında tanımlı değil."
+        )
+    if not to_emails:
+        raise EmailSendError("Alıcı e-posta adresi belirtilmedi.")
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = formataddr(("CostBot", from_addr))
+    msg["To"] = ", ".join(to_emails)
+
+    body_part = MIMEMultipart("alternative")
+    body_part.attach(MIMEText(body_text, "plain"))
+    body_part.attach(MIMEText(body_html, "html"))
+    msg.attach(body_part)
+
+    pdf_part = MIMEApplication(attachment_bytes, _subtype="pdf")
+    pdf_part.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+    msg.attach(pdf_part)
+
+    try:
+        with smtplib.SMTP(host, int(port), timeout=15) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(from_addr, to_emails, msg.as_string())
+    except Exception as e:
+        raise EmailSendError(f"E-posta gönderilemedi: {e}")
+
+
+def send_report_email(to_emails: list[str], pdf_bytes: bytes, language: str = "tr") -> None:
+    """Zamanlanmış PDF raporunu, ekli olarak gönderir."""
+    import time
+    if language == "en":
+        subject = "CostBot - Your Scheduled Cost Report"
+        body_html = """
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <div style="background: #2563eb; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+            <span style="color: white; font-size: 20px; font-weight: bold;">🤖 CostBot</span>
+          </div>
+          <div style="background: #f8fafc; padding: 32px 24px; border-radius: 0 0 12px 12px;">
+            <p style="color: #1e293b; font-size: 15px;">Hello,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+              Your scheduled cloud cost report is attached to this email.
+            </p>
+          </div>
+        </div>
+        """
+        body_text = "Hello,\n\nYour scheduled cloud cost report is attached to this email.\n\n— CostBot"
+    else:
+        subject = "CostBot - Zamanlanmış Maliyet Raporunuz"
+        body_html = """
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <div style="background: #2563eb; padding: 24px; border-radius: 12px 12px 0 0; text-align: center;">
+            <span style="color: white; font-size: 20px; font-weight: bold;">🤖 CostBot</span>
+          </div>
+          <div style="background: #f8fafc; padding: 32px 24px; border-radius: 0 0 12px 12px;">
+            <p style="color: #1e293b; font-size: 15px;">Merhaba,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.6;">
+              Zamanlanmış bulut maliyet raporunuz bu e-postaya ek olarak iliştirilmiştir.
+            </p>
+          </div>
+        </div>
+        """
+        body_text = "Merhaba,\n\nZamanlanmış bulut maliyet raporunuz bu e-postaya ek olarak iliştirilmiştir.\n\n— CostBot"
+
+    filename = f"costbot-rapor-{time.strftime('%Y-%m-%d')}.pdf"
+    send_email_with_attachment([e for e in to_emails], subject, body_html, body_text, pdf_bytes, filename)

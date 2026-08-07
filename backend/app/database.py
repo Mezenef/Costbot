@@ -100,6 +100,27 @@ CREATE TABLE IF NOT EXISTS AlertHistory (
     ChangePct REAL,
     NotifiedDate TEXT DEFAULT CURRENT_TIMESTAMP::TEXT
 );
+
+CREATE TABLE IF NOT EXISTS SyncLog (
+    SyncId SERIAL PRIMARY KEY,
+    SyncedAt TEXT DEFAULT CURRENT_TIMESTAMP::TEXT,
+    RowsInserted INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS ScheduledReports (
+    ScheduleId SERIAL PRIMARY KEY,
+    UserId INTEGER NOT NULL,
+    Name TEXT,
+    Enabled INTEGER DEFAULT 1,
+    Granularity TEXT DEFAULT 'week',
+    DayOfWeek INTEGER,
+    DayOfMonth INTEGER,
+    TimeOfDay TEXT DEFAULT '09:00',
+    Recipients TEXT,
+    Language TEXT DEFAULT 'tr',
+    LastSentDate TEXT,
+    CreatedDate TEXT DEFAULT CURRENT_TIMESTAMP::TEXT
+);
 """
 
 CLOUDCOSTS_COLUMNS = [
@@ -203,6 +224,8 @@ def init_schema(conn: PGConnection) -> None:
     conn.executescript(SCHEMA_SQL)
     conn.executescript("""
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS Role TEXT DEFAULT 'Kullanıcı';
+        ALTER TABLE ScheduledReports ADD COLUMN IF NOT EXISTS Name TEXT;
+        ALTER TABLE ScheduledReports DROP CONSTRAINT IF EXISTS scheduledreports_userid_key;
         CREATE INDEX IF NOT EXISTS idx_covering_service_cost
             ON CloudCosts(ServiceName, PreTaxCost);
         CREATE INDEX IF NOT EXISTS idx_covering_date_cost

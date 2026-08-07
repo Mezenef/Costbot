@@ -15,6 +15,9 @@ alip kendi ceviri mantigini uyguluyor.
 """
 import io
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+TR_TZ = ZoneInfo("Europe/Istanbul")
 
 import matplotlib
 matplotlib.use("Agg")
@@ -83,7 +86,6 @@ LABELS = {
         "trend_sub": "Toplam maliyet (USD)",
         "distribution_title": "Maliyet Dağılımı",
         "monthly_change_title": "Aylık Değişim",
-        "monthly_change_title": "Aylık Değişim",
         "weekly_change_title": "Haftalık Değişim",
         "last_week_label": "Geçen Hafta",
         "this_week_label": "Bu Hafta",
@@ -132,7 +134,6 @@ LABELS = {
         "trend_title": "Cost Trend",
         "trend_sub": "Total cost (USD)",
         "distribution_title": "Cost Distribution",
-        "monthly_change_title": "Monthly Change",
         "monthly_change_title": "Monthly Change",
         "weekly_change_title": "Weekly Change",
         "last_week_label": "Last Week",
@@ -334,7 +335,7 @@ def _draw_page_frame(c, doc, data, L):
         c.drawString(MARGIN + 1.15 * cm, top_y + 0.18 * cm, "CostBot")
 
     period = _format_period_label(data.get("current_month") or datetime.now().strftime("%Y-%m"))
-    tarih = datetime.now().strftime("%d.%m.%Y")
+    tarih = datetime.now(TR_TZ).strftime("%d.%m.%Y %H:%M")
     right_text = f"{L['report_period']}: {period}     |     {L['report_date']}: {tarih}"
     c.setFont(FONT_BOLD, 8.5)
     c.setFillColor(colors.HexColor("#334155"))
@@ -495,8 +496,9 @@ def _get_recommendations(user_id=None, limit=8):
 # eşleme (mapping) yapıyoruz.
 _GRANULARITY_TO_TIMEFRAME = {
     "day": "daily",
-    "week": "7d",    # yeni bir "son 7 gün" timeframe'i eklememiz gerekir
+    "week": "7d",
     "month": "30d",
+    "this_month": "this_month",
 }
 
 
@@ -516,10 +518,15 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
             data["trend"] = weekly_data["trend"]
     else:
         data = get_dashboard_summary(language=language, user_id=user_id)
-        
+
     recs = _get_recommendations(user_id=user_id)
 
-    # Granülariteye duyarlı başlık ve karşılaştırma metinlerinin önceden tanımlanması
+    # Granülariteye duyarlı başlık ve karşılaştırma metinlerinin önceden
+    # tanımlanması -- her granularity değeri için 6 değişkenin (panel
+    # başlığı, dönem etiketleri, karşılaştırma cümlesi TR/EN, "vs X"
+    # etiketi TR/EN) TAMAMI burada tanımlanır. Bu blok eksik kalırsa,
+    # aşağıdaki Yönetici Özeti ve Metrik Kartları bölümleri
+    # UnboundLocalError ile çöker (bugün yaşanan gerçek hata).
     if granularity == "day":
         change_panel_title = L["daily_change_title"]
         prev_period_label = L["yesterday_label"]
@@ -536,6 +543,14 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
         comparison_phrase_en = "compared to the previous week"
         vs_label_tr = "önceki haftaya göre"
         vs_label_en = "vs previous week"
+    elif granularity == "this_month":
+        change_panel_title = L["monthly_change_title"]
+        prev_period_label = L["last_month_label"]
+        curr_period_label = L["this_month_label"]
+        comparison_phrase_tr = "geçen ayın aynı dönemine göre"
+        comparison_phrase_en = "compared to the same period last month"
+        vs_label_tr = "geçen ayın aynı dönemine göre"
+        vs_label_en = "vs same period last month"
     else:
         change_panel_title = L["monthly_change_title"]
         prev_period_label = L["last_month_label"]
@@ -760,6 +775,7 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
     ]))
+    story.append(Spacer(1, 20))
     story.append(title_row2)
     story.append(Spacer(1, 14))
 

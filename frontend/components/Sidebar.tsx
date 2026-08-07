@@ -25,6 +25,7 @@ export default function Sidebar({ pendingCount = 0, userName, userRole }: Sideba
     { href: "/chat", icon: "💬", label: t("sidebar.aiAssistant") },
     { href: "/recommendations", icon: "💡", label: t("sidebar.recommendations") },
     { href: "/resources", icon: "🗄️", label: t("sidebar.resources") },
+    { href: "/cost-analyzer", icon: "🔍", label: t("sidebar.costAnalyzer") },
     { href: "/reports", icon: "📄", label: t("sidebar.reports") },
     { href: "/alerts", icon: "🔔", label: t("sidebar.alerts") },
     { href: "/settings", icon: "⚙️", label: t("sidebar.settings") },
@@ -117,12 +118,16 @@ export default function Sidebar({ pendingCount = 0, userName, userRole }: Sideba
       <div className="px-3 pb-4">
         <div className={`flex items-center ${collapsed ? "justify-center" : "gap-2"} px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800`}>
           <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-xs font-semibold flex items-center justify-center flex-shrink-0">
-            {(userName || "?").slice(0, 2).toUpperCase()}
+            {(() => {
+              const parts = (userName || "").trim().split(/\s+/).filter(Boolean);
+              if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+              if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+              return "?";
+            })()}
           </div>
           {!collapsed && (
             <div className="min-w-0">
               <div className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{userName || "..."}</div>
-              <div className="text-[10px] text-gray-400 dark:text-gray-500">{userRole || t("sidebar.role")}</div>
             </div>
           )}
         </div>

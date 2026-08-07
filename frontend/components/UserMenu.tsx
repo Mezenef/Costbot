@@ -19,7 +19,12 @@ export default function UserMenu({ userName, userRole }: UserMenuProps) {
     router.push("/");
   }
 
-  const initials = (userName || "?").slice(0, 2).toUpperCase();
+  const initials = (() => {
+    const parts = (userName || "").trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return "?";
+  })();
 
   return (
     <div className="relative">
@@ -42,7 +47,6 @@ export default function UserMenu({ userName, userRole }: UserMenuProps) {
           <div className="absolute right-0 top-full mt-2 w-44 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-lg py-1.5 z-20">
             <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
               <div className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{userName || "..."}</div>
-              <div className="text-[10px] text-gray-400 dark:text-gray-500">{userRole || t("sidebar.role")}</div>
             </div>
             <a
               href="/settings"

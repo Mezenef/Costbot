@@ -33,7 +33,6 @@ import {
 import UserMenu from "@/components/UserMenu";
 import { useLanguage } from "@/lib/i18n";
 import ResourceGroupPanel from "@/components/ResourceGroupPanel";
-import MonthlyServiceChart from "@/components/MonthlyServiceChart";
 import CollapsibleCard from "@/components/CollapsibleCard";
 import ForecastCard from "@/components/ForecastCard";
 import FinOpsScoreCard from "@/components/FinOpsScoreCard";
@@ -70,6 +69,10 @@ function ChangeBadge({ pct, light }: { pct: number | null; light?: boolean }) {
         —
       </span>
     );
+  // "%0.0" gibi yuvarlanmış, yanıltıcı bir sıfır göstermemek için --
+  // değer 1'in altındaysa (ör. gerçek değişim %0.05 gibi çok küçükse)
+  // 2 ondalık basamak, aksi hâlde her zamanki 1 basamak kullanılır.
+  const displayPct = Math.abs(pct) < 1 ? Math.abs(pct).toFixed(2) : Math.abs(pct).toFixed(1);
   const up = pct >= 0;
   if (light) {
     return (
@@ -78,7 +81,7 @@ function ChangeBadge({ pct, light }: { pct: number | null; light?: boolean }) {
           up ? "text-red-700 dark:text-white" : "text-emerald-700 dark:text-white"
         }`}
       >
-        {up ? "↑" : "↓"} %{Math.abs(pct).toFixed(1)}
+        {up ? "↑" : "↓"} %{displayPct}
       </span>
     );
   }
@@ -90,7 +93,7 @@ function ChangeBadge({ pct, light }: { pct: number | null; light?: boolean }) {
           : "text-green-600 dark:text-green-400"
       }`}
     >
-      {up ? "↑" : "↓"} %{Math.abs(pct).toFixed(1)}
+      {up ? "↑" : "↓"} %{displayPct}
     </span>
   );
 }
@@ -102,6 +105,7 @@ function getComparisonLabel(
   const map: Record<DashboardTimeframe, string> = {
     daily: t("dashboard.vsPreviousDaily"),
     "30d": t("dashboard.vsPrevious30d"),
+    this_month: t("dashboard.vsPreviousThisMonth"),
     "3m": t("dashboard.vsPrevious3m"),
     "6m": t("dashboard.vsPrevious6m"),
     "12m": t("dashboard.vsPrevious12m"),
@@ -143,7 +147,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [trendChartType, setTrendChartType] = useState<"line" | "bar">("line");
   const [distributionChartType, setDistributionChartType] = useState<"donut" | "bar">("donut");
-  const [timeframe, setTimeframe] = useState<DashboardTimeframe>("30d");
+  const [timeframe, setTimeframe] = useState<DashboardTimeframe>("this_month");
 
   useEffect(() => {
     setMounted(true);
@@ -200,21 +204,6 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <select
-              value={timeframe}
-              onChange={(e) =>
-                setTimeframe(e.target.value as DashboardTimeframe)
-              }
-              className="text-xs font-medium bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="daily">{t("dashboard.timeframeDaily")}</option>
-              <option value="30d">{t("dashboard.timeframe30d")}</option>
-              <option value="3m">{t("dashboard.timeframe3m")}</option>
-              <option value="6m">{t("dashboard.timeframe6m")}</option>
-              <option value="12m">{t("dashboard.timeframe12m")}</option>
-              <option value="all">{t("dashboard.timeframeAll")}</option>
-            </select>
-
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               aria-label="Tema değiştir"
@@ -267,16 +256,16 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {/* Toplam Maliyet -- mavi */}
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-500/80 dark:to-blue-700/80 rounded-2xl p-5 shadow-sm border border-blue-200/60 dark:border-blue-500/20">
                   <div className="text-xs text-blue-700 dark:text-blue-100 mb-1">
-                    {t("dashboard.totalCost")}
+                    {t("dashboard.currentMonthCost")}
                   </div>
                   <div className="text-xl font-bold text-blue-950 dark:text-white">
                     {formatMoney(data.total_cost)}
                   </div>
-                  <div className="mt-1 flex items-center gap-1">
+                  <div className="mt-1 flex items-center flex-wrap gap-x-1.5 gap-y-0.5">
                     <ChangeBadge pct={data.cost_change_pct} light />
                     <span className="text-xs text-blue-700/80 dark:text-blue-100">
                       {getComparisonLabel(timeframe, t)}
@@ -286,8 +275,16 @@ export default function DashboardPage() {
 
                 {/* Bugünkü Maliyet -- camgöbeği */}
                 <div className="bg-gradient-to-br from-cyan-100 to-cyan-200 dark:from-cyan-500/80 dark:to-cyan-700/80 rounded-2xl p-5 shadow-sm border border-cyan-200/60 dark:border-cyan-500/20">
-                  <div className="text-xs text-cyan-700 dark:text-cyan-100 mb-1">
+                  <div className="text-xs text-cyan-700 dark:text-cyan-100 mb-1 flex items-center gap-1">
                     {t("dashboard.todayCost")}
+                    {data.today_data_may_be_incomplete && (
+                      <span
+                        title={`${formatDateDMY(data.today_date)} tarihli veri henüz güncelleniyor olabilir`}
+                        className="text-amber-700 dark:text-amber-200 cursor-help text-base leading-none"
+                      >
+                        ⚠️
+                      </span>
+                    )}
                   </div>
                   <div className="text-xl font-bold text-cyan-950 dark:text-white">
                     {formatMoney(data.today_cost)}
@@ -295,10 +292,18 @@ export default function DashboardPage() {
                   <div className="text-xs text-cyan-700/80 dark:text-cyan-100 mt-1">
                     {formatDateDMY(data.today_date)}
                   </div>
+                  {data.today_data_may_be_incomplete && (
+                    <div className="text-xs text-amber-800 dark:text-amber-100 mt-1.5 leading-snug font-medium">
+                      {formatDateDMY(data.today_date)} verisi henüz tam güncellenmemiş olabilir
+                    </div>
+                  )}
                 </div>
 
-                {/* Potansiyel Tasarruf -- yeşil */}
-                <div className="bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-500/80 dark:to-emerald-700/80 rounded-2xl p-5 shadow-sm border border-emerald-200/60 dark:border-emerald-500/20">
+                {/* Potansiyel Tasarruf -- yeşil, bekleyen öneri sayısı içinde */}
+                <a
+                  href="/recommendations"
+                  className="block bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-500/80 dark:to-emerald-700/80 rounded-2xl p-5 shadow-sm border border-emerald-200/60 dark:border-emerald-500/20 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition"
+                >
                   <div className="text-xs text-emerald-700 dark:text-emerald-100 mb-1">
                     {t("dashboard.potentialSavings")}
                   </div>
@@ -306,25 +311,15 @@ export default function DashboardPage() {
                     {formatMoney(data.potential_savings)}
                   </div>
                   <div className="text-xs text-emerald-700/80 dark:text-emerald-100 mt-1">
-                    {t("dashboard.fromPending")}
+                    {data.pending_recommendations} {t("dashboard.pendingRecs")}
                   </div>
-                </div>
-
-                {/* Bekleyen Öneriler -- mor */}
-                <div className="bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-500/80 dark:to-purple-700/80 rounded-2xl p-5 shadow-sm border border-purple-200/60 dark:border-purple-500/20">
-                  <div className="text-xs text-purple-700 dark:text-purple-100 mb-1">
-                    {t("dashboard.pendingRecs")}
-                  </div>
-                  <div className="text-xl font-bold text-purple-950 dark:text-white">
-                    {data.pending_recommendations}
-                  </div>
-                  <div className="text-xs text-purple-700/80 dark:text-purple-100 mt-1">
-                    {t("dashboard.awaitingReview")}
-                  </div>
-                </div>
+                </a>
 
                 {/* Kaynaklar -- gri/slate */}
-                <div className="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-600/80 dark:to-slate-800/80 rounded-2xl p-5 shadow-sm border border-slate-200/60 dark:border-slate-500/20">
+                <a
+                  href="/resources"
+                  className="block bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-600/80 dark:to-slate-800/80 rounded-2xl p-5 shadow-sm border border-slate-200/60 dark:border-slate-500/20 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition"
+                >
                   <div className="text-xs text-slate-600 dark:text-slate-300 mb-1">
                     {t("dashboard.resources")}
                   </div>
@@ -332,9 +327,9 @@ export default function DashboardPage() {
                     {data.resource_count}
                   </div>
                   <div className="text-xs text-slate-600/80 dark:text-slate-300 mt-1">
-                    {t("dashboard.trackedResources")}
+                    {data.service_count ?? 0} servis · {data.group_count ?? 0} grup
                   </div>
-                </div>
+                </a>
               </div>
 
               <div className="grid lg:grid-cols-3 gap-4 mb-6">
@@ -400,10 +395,16 @@ export default function DashboardPage() {
                             dataKey="month"
                             tick={{ fontSize: 11 }}
                             tickFormatter={formatChartDateLabel}
+                            allowDuplicatedCategory={false}
                           />
                           <YAxis
                             tick={{ fontSize: 11 }}
-                            tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`}
+                            tickFormatter={(v) => {
+                              if (v >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+                              if (v >= 100) return `$${v.toFixed(0)}`;
+                              if (v >= 1) return `$${v.toFixed(1)}`;
+                              return `$${v.toFixed(2)}`;
+                            }}
                           />
                           <Tooltip
                             formatter={(v) => formatMoney(Number(v))}
@@ -436,10 +437,16 @@ export default function DashboardPage() {
                             dataKey="month"
                             tick={{ fontSize: 11 }}
                             tickFormatter={formatChartDateLabel}
+                            allowDuplicatedCategory={false}
                           />
                           <YAxis
                             tick={{ fontSize: 11 }}
-                            tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`}
+                            tickFormatter={(v) => {
+                              if (v >= 1000) return `$${(v / 1000).toFixed(1)}K`;
+                              if (v >= 100) return `$${v.toFixed(0)}`;
+                              if (v >= 1) return `$${v.toFixed(1)}`;
+                              return `$${v.toFixed(2)}`;
+                            }}
                           />
                           <Tooltip
                             formatter={(v) => formatMoney(Number(v))}
@@ -750,10 +757,7 @@ export default function DashboardPage() {
                 </CollapsibleCard>
               </div>
 
-              <div className="mt-6">
-                <MonthlyServiceChart />
-              </div>
-            </>
+              </>
           )}
 
           <div className="mt-6">

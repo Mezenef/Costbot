@@ -6,7 +6,7 @@ import { registerUser } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 import Logo from "@/components/Logo";
 
-const ROLES = ["Yönetici", "Finans", "DevOps", "Kullanıcı"];
+
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,6 +14,14 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const passwordChecks = {
+    length: password.length >= 8,
+    upper: /[A-Z]/.test(password),
+    lower: /[a-z]/.test(password),
+    digit: /[0-9]/.test(password),
+  };
+  const passwordValid = Object.values(passwordChecks).every(Boolean);
   const [role, setRole] = useState("Kullanıcı");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -74,19 +82,28 @@ export default function RegisterPage() {
                 placeholder={t("register.passwordPlaceholder")}
                 className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
+              {password.length > 0 && (
+                <div className="mt-2 text-[11px] flex flex-wrap gap-x-1">
+                  <span className={passwordChecks.length ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
+                    En az 8 karakter
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">,</span>
+                  <span className={passwordChecks.upper ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
+                    en az 1 büyük harf
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">,</span>
+                  <span className={passwordChecks.lower ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
+                    en az 1 küçük harf
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">,</span>
+                  <span className={passwordChecks.digit ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-gray-500"}>
+                    en az 1 rakam
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">Rol</label>
-              <select
-                value={role} onChange={(e) => setRole(e.target.value)}
-                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-            </div>
+            
 
             {error && (
               <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-xs rounded-lg px-3 py-2.5">
@@ -96,7 +113,7 @@ export default function RegisterPage() {
             )}
 
             <button
-              type="submit" disabled={loading}
+              type="submit" disabled={loading || !passwordValid}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed dark:shadow-[0_0_20px_rgba(59,130,246,0.35)]"
             >
               {loading ? t("register.submitting") : t("register.submit")}
