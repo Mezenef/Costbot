@@ -3,6 +3,7 @@ import Features from "@/components/landing/Features";
 import ClosingCTA from "@/components/landing/ClosingCTA";
 import AnimatedBackground from "@/components/landing/AnimatedBackground";
 import Hero from "@/components/landing/Hero";
+import AutomateEfficiency from "@/components/landing/AutomateEfficiency";
 
 export default function LandingPage() {
   return (
@@ -13,12 +14,11 @@ export default function LandingPage() {
         <div className="relative z-10">
           <HowItWorks />
           <Features />
+          <AutomateEfficiency />
           <ClosingCTA />
         </div>
       </div>
-      <div className="relative isolate h-24">
-        <AnimatedBackground variant="sparse" />
-      </div>
+      
     </div>
   );
 }

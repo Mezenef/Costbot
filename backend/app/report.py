@@ -29,7 +29,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak, CondPageBreak,
 )
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -757,7 +757,13 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
     ]))
     story.append(savings_box)
 
-    story.append(PageBreak())
+    # NOT: Koşulsuz PageBreak() yerine CondPageBreak kullanılıyor --
+    # eğer sayfa 1 içeriği (kartlar + grafikler) zaten sayfa sonuna
+    # yakınsa ve ReportLab kendiliğinden yeni sayfaya geçmişse, ek bir
+    # PageBreak() FAZLADAN, neredeyse boş bir sayfa yaratıyordu
+    # (kullanıcı testinde bulunan gerçek sorun). CondPageBreak, sadece
+    # kalan alan gerçekten yetersizse (8cm'den az) yeni sayfaya geçer.
+    story.append(CondPageBreak(8 * cm))
 
     # ---- Sayfa 2: Oneriler baslik (ikon rozetli) ----
     title_icon = _icon_badge("▤", ACCENT, size=1.1 * cm, font_size=11)
@@ -797,7 +803,7 @@ def generate_pdf_report(language: str = "tr", user_id: int = None, granularity: 
             rec_rows.append([
                 name_cell,
                 Paragraph(r["TargetService"] or "-", styles["TableCell"]),
-                Paragraph((r["RecommendationText"] or "")[:160], styles["TableCell"]),
+                Paragraph(r["RecommendationText"] or "-", styles["TableCell"]),
                 Paragraph(f"<b><font color='#16a34a'>{_fmt_money(r['PotentialSavings'] or 0)}</font></b>", styles["TableCellBold"]),
                 _status_pill(r["Status"] or "Beklemede", L),
             ])

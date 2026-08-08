@@ -12,6 +12,7 @@ yönetimi karmaşıklığı" — bu dosyada CORSMiddleware ile en baştan çöz�
 """
 
 import logging
+logger = logging.getLogger("costbot.main")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 import os
 import time
@@ -809,6 +810,19 @@ def create_scheduled_report(user_id: int, body: ScheduledReportUpdate):
     )
     conn.commit()
     conn.close()
+
+    # NOT: Kullanıcı bir zamanlama kaydettiğinde, "1 saatlik otomatik
+    # döngünün gelmesini beklemeden" -- eğer o an için (bugün + saat
+    # geçmiş) koşullar zaten sağlanıyorsa, ANINDA gönderilsin diye
+    # burada bir kez kontrol tetikleniyor. Koşullar sağlanmıyorsa
+    # (ör. saat henüz gelmedi) hiçbir şey olmaz, sessizce geçer --
+    # normal saatlik döngü daha sonra zaten kontrol edecek.
+    from .scheduler import _send_scheduled_reports
+    try:
+        _send_scheduled_reports()
+    except Exception as e:
+        logger.error("Zamanlama sonrası anlık kontrol başarısız: %s", e)
+
     return {"created": True}
 
 
@@ -826,14 +840,29 @@ def update_scheduled_report(schedule_id: int, user_id: int, body: ScheduledRepor
         raise HTTPException(status_code=404, detail="Zamanlanmış rapor bulunamadı")
 
     recipients_str = ",".join(r.strip() for r in body.recipients if r.strip())
+    # NOT: Kullanıcı bir zamanlamayı DÜZENLEDİĞİNDE (gün/saat/alıcı
+    # farketmeksizin), LastSentDate BİLİNÇLİ OLARAK sıfırlanıyor.
+    # Aksi hâlde, kullanıcı yeni bir saat/gün ayarlasa bile, eski
+    # LastSentDate ("bugün zaten gönderildi") o yeni zamanın da
+    # engellenmesine yol açıyordu -- kullanıcı testinde tam olarak
+    # yaşanan sorun buydu. Düzenleme = "bu ayarları yeniden
+    # değerlendir" demek, dolayısıyla önceki gönderim kaydı geçersiz
+    # sayılır.
     conn.execute(
         "UPDATE ScheduledReports SET Name = ?, Enabled = ?, Granularity = ?, DayOfWeek = ?, DayOfMonth = ?, "
-        "TimeOfDay = ?, Recipients = ?, Language = ? WHERE ScheduleId = ?",
+        "TimeOfDay = ?, Recipients = ?, Language = ?, LastSentDate = NULL WHERE ScheduleId = ?",
         (body.name, int(body.enabled), body.granularity, body.day_of_week, body.day_of_month,
          body.time_of_day, recipients_str, body.language, schedule_id),
     )
     conn.commit()
     conn.close()
+
+    from .scheduler import _send_scheduled_reports
+    try:
+        _send_scheduled_reports()
+    except Exception as e:
+        logger.error("Zamanlama güncellemesi sonrası anlık kontrol başarısız: %s", e)
+
     return {"updated": True}
 
 

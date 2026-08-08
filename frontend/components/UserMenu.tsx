@@ -30,15 +30,14 @@ export default function UserMenu({ userName, userRole }: UserMenuProps) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+        className="flex items-center rounded-full hover:brightness-105 transition"
       >
-        <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-[11px] font-semibold flex items-center justify-center flex-shrink-0">
+        <div
+          className="w-8 h-8 rounded-full text-xs font-semibold flex items-center justify-center flex-shrink-0"
+          style={{ background: "linear-gradient(135deg, #A855F7, #6366F1)", color: "#FFFFFF" }}
+        >
           {initials}
         </div>
-        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 max-w-[100px] truncate">
-          {userName || "..."}
-        </span>
-        <span className="text-[9px] text-gray-400 dark:text-gray-500">{open ? "▴" : "▾"}</span>
       </button>
 
       {open && (

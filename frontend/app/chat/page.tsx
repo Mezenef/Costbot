@@ -162,8 +162,8 @@ export default function ChatPage() {
   const showTypingDots = loading && (!lastMessage || lastMessage.role !== "bot" || lastMessage.text === "");
 
   return (
-    <div className="flex bg-gray-50 dark:bg-gray-950 h-screen">
-      <Sidebar pendingCount={pendingCount} userName={user?.full_name} userRole={user?.role} />
+    <div className="flex bg-[#F0FAF9]  dark:bg-gray-950 h-screen">
+      <Sidebar pendingCount={pendingCount} userName={user?.full_name} userRole={user?.role} userEmail={user?.email} />
 
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-6 py-3.5">

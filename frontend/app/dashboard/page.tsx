@@ -45,12 +45,12 @@ interface StoredUser {
 }
 
 const PIE_COLORS = [
-  "#00A8FF",
-  "#9B5CFF",
-  "#00E676",
-  "#FF9500",
-  "#FF3B5C",
-  "#64748B",
+  "#7C3AED",
+  "#A855F7",
+  "#C4B5FD",
+  "#DDD6FE",
+  "#E9D5FF",
+  "#F3E8FF",
 ];
 
 function formatMoney(n: number) {
@@ -62,18 +62,22 @@ function formatMoney(n: number) {
 
 // light=true -> gradyanli ozet kartlarinin icinde kullanilir; acik temada
 // koyu (okunakli) renkler, koyu temada beyaz renkler otomatik uygulanir.
-function ChangeBadge({ pct, light }: { pct: number | null; light?: boolean }) {
+function ChangeBadge({ pct, light, dark }: { pct: number | null; light?: boolean; dark?: boolean }) {
   if (pct === null)
     return (
-      <span className={`text-xs ${light ? "text-gray-500 dark:text-white/70" : "text-gray-400 dark:text-gray-500"}`}>
+      <span className={`text-xs ${dark ? "text-black/60" : light ? "text-gray-500 dark:text-white/70" : "text-gray-400 dark:text-gray-500"}`}>
         —
       </span>
     );
-  // "%0.0" gibi yuvarlanmış, yanıltıcı bir sıfır göstermemek için --
-  // değer 1'in altındaysa (ör. gerçek değişim %0.05 gibi çok küçükse)
-  // 2 ondalık basamak, aksi hâlde her zamanki 1 basamak kullanılır.
   const displayPct = Math.abs(pct) < 1 ? Math.abs(pct).toFixed(2) : Math.abs(pct).toFixed(1);
   const up = pct >= 0;
+  if (dark) {
+    return (
+      <span className="text-xs font-medium text-black">
+        {up ? "↑" : "↓"} %{displayPct}
+      </span>
+    );
+  }
   if (light) {
     return (
       <span
@@ -186,11 +190,12 @@ export default function DashboardPage() {
     : 1;
 
   return (
-    <div className="flex bg-gray-50 dark:bg-gray-950 min-h-screen">
+    <div className="flex bg-[#F0FAF9] dark:bg-gray-950 min-h-screen">
       <Sidebar
         pendingCount={data?.pending_recommendations ?? 0}
         userName={user?.full_name}
         userRole={user?.role}
+        userEmail={user?.email}
       />
 
       <div className="flex-1 min-w-0">
@@ -229,7 +234,10 @@ export default function DashboardPage() {
 
           {data && (
             <>
-              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-500/10 dark:to-cyan-500/10 border border-blue-100 dark:border-blue-500/20 rounded-2xl p-5 mb-6 flex items-center justify-between flex-wrap gap-4">
+              <div
+                className="rounded-2xl p-5 mb-6 flex items-center justify-between flex-wrap gap-4 border dark:from-purple-500/10 dark:to-violet-500/10 dark:bg-gradient-to-r dark:border-purple-500/20"
+                style={{ background: "linear-gradient(90deg, #F3EDFF, #F3EDFF)", borderColor: "rgba(168,85,247,0.2)" }}
+              >
                 <div>
                   <h2 className="font-semibold text-gray-900 dark:text-white">
                     {t("dashboard.greeting", {
@@ -257,81 +265,97 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                {/* Toplam Maliyet -- mavi */}
+                {/* Güncel Aylık Maliyet -- mavi */}
                 <div className="bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-500/80 dark:to-blue-700/80 rounded-2xl p-5 shadow-sm border border-blue-200/60 dark:border-blue-500/20">
-                  <div className="text-xs text-blue-700 dark:text-blue-100 mb-1">
+                  <div className="text-xs text-black/70 mb-1">
                     {t("dashboard.currentMonthCost")}
                   </div>
-                  <div className="text-xl font-bold text-blue-950 dark:text-white">
+                  <div className="text-xl font-bold text-black">
                     {formatMoney(data.total_cost)}
                   </div>
                   <div className="mt-1 flex items-center flex-wrap gap-x-1.5 gap-y-0.5">
-                    <ChangeBadge pct={data.cost_change_pct} light />
-                    <span className="text-xs text-blue-700/80 dark:text-blue-100">
+                    <ChangeBadge pct={data.cost_change_pct} dark />
+                    <span className="text-xs text-black/70">
                       {getComparisonLabel(timeframe, t)}
                     </span>
                   </div>
                 </div>
 
-                {/* Bugünkü Maliyet -- camgöbeği */}
-                <div className="bg-gradient-to-br from-cyan-100 to-cyan-200 dark:from-cyan-500/80 dark:to-cyan-700/80 rounded-2xl p-5 shadow-sm border border-cyan-200/60 dark:border-cyan-500/20">
-                  <div className="text-xs text-cyan-700 dark:text-cyan-100 mb-1 flex items-center gap-1">
+                {/* Bugünkü Maliyet -- mor (soluk) */}
+                <div
+                  className="rounded-2xl p-5 shadow-sm border"
+                  style={{
+                    background: "linear-gradient(135deg, #8ab8f3, #8981f5)",
+                    borderColor: "rgba(168,85,247,0.25)",
+                  }}
+                >
+                  <div className="text-xs text-black/70 mb-1 flex items-center gap-1">
                     {t("dashboard.todayCost")}
                     {data.today_data_may_be_incomplete && (
                       <span
-                        title={`${formatDateDMY(data.today_date)} tarihli veri henüz güncelleniyor olabilir`}
-                        className="text-amber-700 dark:text-amber-200 cursor-help text-base leading-none"
+                        className="relative group cursor-help flex items-center"
+                        style={{ color: "#ee3636" }}
                       >
-                        ⚠️
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                          <line x1="12" y1="9" x2="12" y2="13" />
+                          <line x1="12" y1="17" x2="12.01" y2="17" />
+                        </svg>
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block whitespace-nowrap bg-gray-900 text-white text-[11px] rounded-lg px-2.5 py-1.5 z-20 shadow-lg">
+                          {formatDateDMY(data.today_date)} tarihli veri henüz güncelleniyor olabilir
+                        </span>
                       </span>
                     )}
                   </div>
-                  <div className="text-xl font-bold text-cyan-950 dark:text-white">
+                  <div className="text-xl font-bold text-black">
                     {formatMoney(data.today_cost)}
                   </div>
-                  <div className="text-xs text-cyan-700/80 dark:text-cyan-100 mt-1">
+                  <div className="text-xs text-black/70 mt-1">
                     {formatDateDMY(data.today_date)}
                   </div>
-                  {data.today_data_may_be_incomplete && (
-                    <div className="text-xs text-amber-800 dark:text-amber-100 mt-1.5 leading-snug font-medium">
-                      {formatDateDMY(data.today_date)} verisi henüz tam güncellenmemiş olabilir
-                    </div>
-                  )}
+                  
                 </div>
 
-                {/* Potansiyel Tasarruf -- yeşil, bekleyen öneri sayısı içinde */}
+                {/* Potansiyel Tasarruf -- indigo, bekleyen öneri sayısı içinde */}
                 <a
                   href="/recommendations"
-                  className="block bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-500/80 dark:to-emerald-700/80 rounded-2xl p-5 shadow-sm border border-emerald-200/60 dark:border-emerald-500/20 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition"
+                  className="block rounded-2xl p-5 shadow-sm border cursor-pointer hover:brightness-110 transition"
+                  style={{
+                    background: "linear-gradient(135deg, rgb(131, 150, 235), #63d0f1)",
+                    borderColor: "rgba(99,102,241,0.3)",
+                  }}
                 >
-                  <div className="text-xs text-emerald-700 dark:text-emerald-100 mb-1">
+                  <div className="text-xs text-black/70 mb-1">
                     {t("dashboard.potentialSavings")}
                   </div>
-                  <div className="text-xl font-bold text-emerald-950 dark:text-white">
+                  <div className="text-xl font-bold text-black">
                     {formatMoney(data.potential_savings)}
                   </div>
-                  <div className="text-xs text-emerald-700/80 dark:text-emerald-100 mt-1">
+                  <div className="text-xs text-black/70 mt-1">
                     {data.pending_recommendations} {t("dashboard.pendingRecs")}
                   </div>
                 </a>
 
-                {/* Kaynaklar -- gri/slate */}
+                {/* Kaynaklar -- mor-mavi arası (violet) */}
                 <a
                   href="/resources"
-                  className="block bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-600/80 dark:to-slate-800/80 rounded-2xl p-5 shadow-sm border border-slate-200/60 dark:border-slate-500/20 cursor-pointer hover:brightness-95 dark:hover:brightness-110 transition"
+                  className="block rounded-2xl p-5 shadow-sm border cursor-pointer hover:brightness-110 transition"
+                  style={{
+                    background: "linear-gradient(135deg, #4fb3da, #198daa)",
+                    borderColor: "rgba(139,92,246,0.3)",
+                  }}
                 >
-                  <div className="text-xs text-slate-600 dark:text-slate-300 mb-1">
+                  <div className="text-xs text-black/70 mb-1">
                     {t("dashboard.resources")}
                   </div>
-                  <div className="text-xl font-bold text-slate-900 dark:text-white">
+                  <div className="text-xl font-bold text-black">
                     {data.resource_count}
                   </div>
-                  <div className="text-xs text-slate-600/80 dark:text-slate-300 mt-1">
+                  <div className="text-xs text-black/70 mt-1">
                     {data.service_count ?? 0} servis · {data.group_count ?? 0} grup
                   </div>
                 </a>
               </div>
-
               <div className="grid lg:grid-cols-3 gap-4 mb-6">
                 <div className="lg:col-span-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
                   <div className="flex items-center justify-between mb-4">

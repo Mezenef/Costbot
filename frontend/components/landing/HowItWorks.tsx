@@ -2,9 +2,9 @@
 import { useLanguage } from "@/lib/i18n";
 
 const STEPS_META = [
-  { icon: "💬", bg: "bg-blue-50 dark:bg-blue-500/10 dark:ring-1 dark:ring-blue-500/30 dark:shadow-[0_0_25px_rgba(59,130,246,0.25)]" },
-  { icon: "🧠", bg: "bg-emerald-50 dark:bg-emerald-500/10 dark:ring-1 dark:ring-emerald-500/30 dark:shadow-[0_0_25px_rgba(16,185,129,0.25)]" },
-  { icon: "📈", bg: "bg-violet-50 dark:bg-violet-500/10 dark:ring-1 dark:ring-violet-500/30 dark:shadow-[0_0_25px_rgba(139,92,246,0.25)]" },
+  { bg: "#C9BFF0", textColor: "#3B1D82", icon: "💬" },
+  { bg: "#DDD5F5", textColor: "#5B21B6", icon: "🧠" },
+  { bg: "#EEE9FB", textColor: "#6D28D9", icon: "📈" },
 ];
 
 export default function HowItWorks() {
@@ -16,24 +16,48 @@ export default function HowItWorks() {
   }));
 
   return (
-    <section id="nasil-calisir" className="px-6 md:px-12 py-24 max-w-6xl mx-auto text-center">
-      <h2 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-20">{t("howItWorks.title")}</h2>
+    <section id="nasil-calisir" className="px-6 md:px-12 py-24 bg-[#F5F5F7] dark:bg-gray-950">
+      <div className="max-w-6xl mx-auto grid md:grid-cols-5 gap-10 items-center">
+        {/* Sol: baslik */}
+        <div className="md:col-span-2">
+          <h2 className="text-3xl md:text-4xl font-medium text-gray-900 dark:text-white leading-tight mb-6">
+            {t("howItWorks.title")}
+          </h2>
+          <p className="text-[#6B6B76] dark:text-gray-400 leading-relaxed">
+            {t("howItWorks.subtitle")}
+          </p>
+        </div>
 
-      <div className="relative grid md:grid-cols-3 gap-16 md:gap-20">
-        <div className="hidden md:block absolute top-[18px] left-[18%] right-[18%] border-t-2 border-dashed border-gray-200 dark:border-gray-700" />
-
-        {steps.map((s, i) => (
-          <div key={i} className="relative flex flex-col items-center px-2">
-            <div className="w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center mb-8 relative z-10 ring-4 ring-white dark:ring-gray-900 dark:shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-              {i + 1}
+        {/* Sag: 3 adimdan olusan dikey bant */}
+        <div className="md:col-span-3 rounded-3xl overflow-hidden">
+          {steps.map((s, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-5 px-8 py-7"
+              style={{ background: s.bg }}
+            >
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
+                style={{ background: "rgba(255,255,255,0.55)" }}
+              >
+                {s.icon}
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-bold" style={{ color: s.textColor, opacity: 0.7 }}>
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <h3 className="font-semibold text-base" style={{ color: s.textColor }}>
+                    {s.title}
+                  </h3>
+                </div>
+                <p className="text-sm leading-snug" style={{ color: s.textColor, opacity: 0.75 }}>
+                  {s.desc}
+                </p>
+              </div>
             </div>
-            <div className={`w-28 h-28 rounded-3xl ${s.bg} flex items-center justify-center mb-6 shadow-sm text-5xl`}>
-              {s.icon}
-            </div>
-            <h3 className="font-semibold text-gray-900 dark:text-white text-lg mb-3">{s.title}</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-[260px] leading-relaxed">{s.desc}</p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
   );

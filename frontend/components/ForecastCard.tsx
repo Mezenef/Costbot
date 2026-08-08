@@ -53,7 +53,15 @@ export default function ForecastCard() {
               <div className="text-lg font-bold"><ChangeBadge pct={forecast.trend_pct} /></div>
             </div>
             <div>
-              <div className="text-xs text-gray-400 dark:text-gray-500 mb-1">{t("forecast.confidence")}</div>
+              <div className="text-xs text-gray-400 dark:text-gray-500 mb-1 flex items-center gap-1">
+                {t("forecast.confidence")}
+                <span
+                  title={t("forecast.confidenceExplanation")}
+                  className="text-gray-400 dark:text-gray-500 cursor-help"
+                >
+                  ⓘ
+                </span>
+              </div>
               <div className="text-lg font-bold text-gray-900 dark:text-white">%{forecast.confidence_score?.toFixed(0)}</div>
             </div>
           </div>

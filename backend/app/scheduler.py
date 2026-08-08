@@ -19,6 +19,9 @@ kartı, gerçek bugünün 1 gün gerisinde kalmıştı).
 import os
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+TR_TZ = ZoneInfo("Europe/Istanbul")
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from datetime import date as _date
@@ -117,7 +120,7 @@ def _send_scheduled_reports() -> None:
     from .report import generate_pdf_report
     from .email_service import send_report_email
 
-    now = datetime.now()
+    now = datetime.now(TR_TZ)
     today_str = now.strftime("%Y-%m-%d")
     current_hm = now.strftime("%H:%M")
 
@@ -281,7 +284,16 @@ def start_scheduler() -> None:
     # Şimdilik normal "interval" davranışına dönüldü: ilk çalıştırma,
     # backend açıldıktan "sync_hours" saat SONRA gerçekleşir.
     _scheduler.add_job(_daily_job, "interval", hours=sync_hours)
-    _scheduler.add_job(_hourly_job, "interval", hours=1)
+    # NOT: Kullanıcı testinde bulunan gerçek sorun -- saatlik kontrol
+    # sıklığı, kullanıcının belirlediği dakika hassasiyetli saati
+    # YAKALAYAMIYORDU (saat geçtikten sonra bile en fazla 1 saat
+    # gecikebiliyordu). Rapor zamanlamaları dakika hassasiyetinde
+    # olduğu için, kontrol sıklığı dakikaya indirildi -- bu, hem daha
+    # doğru hem performans açısından sorun teşkil etmiyor (tek
+    # yaptığı, hafif bir SQL sorgusuyla "gönderilmesi gereken var mı"
+    # diye bakmak; gerçek PDF/e-posta işi sadece koşullar sağlanınca
+    # çalışıyor).
+    _scheduler.add_job(_hourly_job, "interval", minutes=1)
 
     _scheduler.start()
     print(f"[scheduler] Zamanlanmış görev başlatıldı ({sync_hours} saatte bir: Azure senkronizasyonu + uyarı kontrolü).")
