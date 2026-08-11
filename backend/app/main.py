@@ -40,6 +40,7 @@ from .teams_service import send_teams_notification, get_teams_recipients, TeamsN
 from .scheduler import start_scheduler, check_and_notify
 from . import forecast
 import re
+import psycopg2
 
 WORKING_CSV = Path(__file__).parent.parent / "data" / "azure_cost_mock_data_WORKING.csv"
 DB_PATH = Path(__file__).parent.parent / "data" / "costbot.db"
@@ -363,9 +364,13 @@ def download_report(language: str = "tr", user_id: int | None = None, granularit
         period_label = month_row["m"]
         if granularity:
             period_label = f"{period_label} ({granularity})"
+        # NOT: PDF'in binary içeriği (pdf_bytes) artık PdfData sütununa
+        # da kaydediliyor -- böylece geçmişteki bu rapor tekrar
+        # indirildiğinde, GÜNCEL veriyle yeniden üretilmek yerine
+        # o günkü BİREBİR AYNI dosya döndürülebiliyor.
         conn.execute(
-            "INSERT INTO ReportHistory (UserId, Period, Language) VALUES (?, ?, ?)",
-            (user_id, period_label, language),
+            "INSERT INTO ReportHistory (UserId, Period, Language, PdfData) VALUES (?, ?, ?, ?)",
+            (user_id, period_label, language, psycopg2.Binary(pdf_bytes)),
         )
         conn.commit()
         conn.close()
@@ -382,6 +387,15 @@ def download_report(language: str = "tr", user_id: int | None = None, granularit
 
 @app.post("/auth/register", response_model=RegisterResponse)
 def auth_register(req: RegisterRequest):
+    # GÜVENLİK: Kayıt, varsayılan olarak KAPALI -- CostBot canlıya
+    # alındıktan sonra, URL'yi bilen HERKESİN hesap açıp SabancıDx'in
+    # gerçek Azure maliyet verilerine erişmesini önlemek için. Yeniden
+    # açmak gerekirse, .env'de ALLOW_REGISTRATION=true eklenir.
+    if os.getenv("ALLOW_REGISTRATION", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Yeni kayıt şu anda kapalı. Erişim için lütfen sistem yöneticisiyle iletişime geçin.",
+        )
     try:
         result = auth.register(req.full_name, req.email, req.password, role=req.role)
     except auth.AuthError as e:
@@ -589,6 +603,38 @@ def report_history(user_id: int):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+@app.get("/reports/history/{report_id}/download")
+def download_report_history_item(report_id: int, user_id: int):
+    """Geçmişteki bir raporu, O GÜNKÜ BİREBİR AYNI PDF ile indirir --
+    günün verisiyle YENİDEN ÜRETMEZ. PdfData bu özellik eklenmeden
+    önce oluşturulmuş eski kayıtlarda NULL olabilir; bu durumda
+    kullanıcıya anlaşılır bir hata döndürülür."""
+    conn = get_connection()
+    row = conn.execute(
+        'SELECT PdfData AS "PdfData", GeneratedDate AS "GeneratedDate" '
+        'FROM ReportHistory WHERE ReportId = ? AND UserId = ?',
+        (report_id, user_id),
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Rapor kaydı bulunamadı")
+    if row["PdfData"] is None:
+        raise HTTPException(
+            status_code=410,
+            detail="Bu rapor, dosya saklama özelliği eklenmeden önce oluşturulduğu için artık indirilemiyor.",
+        )
+
+    filename = f"costbot-rapor-{report_id}.pdf"
+    return Response(
+        content=bytes(row["PdfData"]),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+    )
 
 
 @app.delete("/reports/history/{report_id}")

@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import {
   getReportHistory,
   getReportDownloadUrl,
+  getReportHistoryDownloadUrl,
   deleteReportHistoryItem,
   clearReportHistory,
   listScheduledReports,
@@ -484,7 +485,7 @@ export default function ReportsPage() {
                         <td className="px-5 py-3 text-right">
                           <div className="flex items-center justify-end gap-3">
                             <a
-                              href={getReportDownloadUrl(h.Language, user?.user_id)}
+                              href={getReportHistoryDownloadUrl(h.ReportId, user?.user_id)}
                               className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
                             >
                               {t("reports.download")}

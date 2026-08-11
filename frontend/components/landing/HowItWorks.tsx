@@ -43,10 +43,7 @@ export default function HowItWorks() {
                 {s.icon}
               </div>
               <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-bold" style={{ color: s.textColor, opacity: 0.7 }}>
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
+                <div className="mb-1">
                   <h3 className="font-semibold text-base" style={{ color: s.textColor }}>
                     {s.title}
                   </h3>

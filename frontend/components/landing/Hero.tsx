@@ -22,12 +22,9 @@ const BAR_GROW_DURATION_MS = 1100;
 const BAR_STAGGER_MS = 200;
 const HOLD_DURATION_MS = 4000;
 
-function IconBadge({ children, bg }: { children: React.ReactNode; bg: string }) {
+function IconBadge({ children }: { children: React.ReactNode; bg?: string }) {
   return (
-    <div
-      className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md"
-      style={{ background: bg }}
-    >
+    <div className="w-10 h-10 flex items-center justify-center">
       {children}
     </div>
   );
@@ -35,14 +32,13 @@ function IconBadge({ children, bg }: { children: React.ReactNode; bg: string }) 
 
 function IconVM() {
   return (
-    <IconBadge bg="linear-gradient(135deg, #2563eb, #1d4ed8)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <rect x="2.5" y="4" width="19" height="12" rx="2" fill="white" fillOpacity="0.95" />
-        <rect x="4.5" y="6" width="15" height="8" rx="1" fill="#2563eb" />
-        <rect x="6" y="7.5" width="4.5" height="1.4" rx="0.7" fill="white" />
-        <rect x="6" y="9.6" width="7" height="1.4" rx="0.7" fill="white" fillOpacity="0.7" />
-        <line x1="9" y1="20" x2="15" y2="20" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
-        <line x1="12" y1="16" x2="12" y2="20" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+    <IconBadge>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2.5" y="4" width="19" height="12" rx="2" />
+        <line x1="9" y1="20" x2="15" y2="20" />
+        <line x1="12" y1="16" x2="12" y2="20" />
+        <line x1="6" y1="8" x2="10.5" y2="8" />
+        <line x1="6" y1="10.5" x2="13" y2="10.5" />
       </svg>
     </IconBadge>
   );
@@ -50,11 +46,11 @@ function IconVM() {
 
 function IconDatabase() {
   return (
-    <IconBadge bg="linear-gradient(135deg, #9333ea, #7e22ce)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <ellipse cx="12" cy="5.5" rx="8" ry="3" fill="white" />
-        <path d="M4 5.5v5.5c0 1.66 3.58 3 8 3s8-1.34 8-3V5.5" fill="white" fillOpacity="0.75" />
-        <path d="M4 11v5.5c0 1.66 3.58 3 8 3s8-1.34 8-3V11" fill="white" fillOpacity="0.55" />
+    <IconBadge>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9333ea" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <ellipse cx="12" cy="5.5" rx="8" ry="3" />
+        <path d="M4 5.5v5.5c0 1.66 3.58 3 8 3s8-1.34 8-3V5.5" />
+        <path d="M4 11v5.5c0 1.66 3.58 3 8 3s8-1.34 8-3V11" />
       </svg>
     </IconBadge>
   );
@@ -62,11 +58,11 @@ function IconDatabase() {
 
 function IconStorage() {
   return (
-    <IconBadge bg="linear-gradient(135deg, #f59e0b, #d97706)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" fill="white" fillOpacity="0.95" />
-        <path d="M3.3 7 12 12l8.7-5" stroke="#d97706" strokeWidth="1.6" fill="none" strokeLinejoin="round" />
-        <line x1="12" y1="22" x2="12" y2="12" stroke="#d97706" strokeWidth="1.6" />
+    <IconBadge>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+        <path d="M3.3 7 12 12l8.7-5" />
+        <line x1="12" y1="22" x2="12" y2="12" />
       </svg>
     </IconBadge>
   );
@@ -74,11 +70,11 @@ function IconStorage() {
 
 function IconKubernetes() {
   return (
-    <IconBadge bg="linear-gradient(135deg, #0ea5e9, #0284c7)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <path d="M12 2 3 7v10l9 5 9-5V7Z" fill="white" fillOpacity="0.9" />
-        <circle cx="12" cy="12" r="3.2" fill="#0284c7" />
-        <path d="M12 6v3.5M12 14.5V18M7 9.5l3 2M14 12.5l3 2M7 14.5l3-2M14 11.5l3-2" stroke="#0284c7" strokeWidth="1.3" strokeLinecap="round" />
+    <IconBadge>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2 3 7v10l9 5 9-5V7Z" />
+        <circle cx="12" cy="12" r="3.2" />
+        <path d="M12 6v3.5M12 14.5V18M7 9.5l3 2M14 12.5l3 2M7 14.5l3-2M14 11.5l3-2" />
       </svg>
     </IconBadge>
   );
@@ -86,11 +82,11 @@ function IconKubernetes() {
 
 function IconBandwidth() {
   return (
-    <IconBadge bg="linear-gradient(135deg, #10b981, #059669)">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-        <path d="M4.5 12.8a10.5 10.5 0 0 1 15 0" opacity="0.55" />
-        <path d="M7.3 15.6a6.5 6.5 0 0 1 9.4 0" opacity="0.8" />
-        <circle cx="12" cy="18.2" r="1.6" fill="white" stroke="none" />
+    <IconBadge>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="1.8" strokeLinecap="round">
+        <path d="M4.5 12.8a10.5 10.5 0 0 1 15 0" opacity="0.6" />
+        <path d="M7.3 15.6a6.5 6.5 0 0 1 9.4 0" opacity="0.85" />
+        <circle cx="12" cy="18.2" r="1.6" fill="#10b981" stroke="none" />
       </svg>
     </IconBadge>
   );
@@ -208,8 +204,8 @@ export default function Hero() {
         <div ref={demoRef} className="relative z-10 flex-1 flex items-center">
           <div className="w-full px-6 md:px-12 py-16 max-w-6xl mx-auto">
             <div className="grid lg:grid-cols-[0.65fr_1.35fr] gap-10 lg:gap-24 items-center">
-              {/* ── Sol: eski başlık formatı ── */}
-              <div className="text-left">
+              {/* ── Sol: başlık + açıklama + butonlar ── */}
+              <div className="text-left -mt-10 md:-mt-19">
                 <span className="inline-block text-xs font-semibold tracking-wide text-cyan-300 bg-white/10 ring-1 ring-cyan-400/40 backdrop-blur rounded-full px-3 py-1 mb-6">
                   {t("hero.badge")}
                 </span>
@@ -237,17 +233,27 @@ export default function Hero() {
 
               {/* ── Sağ: animasyonlu AI Asistan demo kartı ── */}
               <div className="relative">
-                <div className="bg-white/90 dark:bg-gray-900/70 backdrop-blur-xl border border-white/20 dark:border-gray-700/50 shadow-[0_0_40px_rgba(0,0,0,0.25)] rounded-2xl text-left overflow-hidden">
-                  <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 dark:border-gray-700">
-                    <div className="flex items-center gap-2 font-semibold text-gray-800 dark:text-gray-100 text-sm">
-                      <Logo size={18} /> CostBot
+                <div
+                  className="rounded-2xl text-left overflow-hidden"
+                  style={{
+                    background: "#12151F",
+                    border: "1px solid #262B3B",
+                    boxShadow: "0 0 40px rgba(0,0,0,0.35)",
+                  }}
+                >
+                  <div
+                    className="flex items-center justify-between px-5 py-3"
+                    style={{ background: "#0E1119", borderBottom: "1px solid #262B3B" }}
+                  >
+                    <div className="flex items-center gap-2 font-semibold text-sm" style={{ color: "#E5E7EF" }}>
+                      <Logo size={18} forceWhite /> CostBot
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500">{t("hero.demo.badge")}</span>
+                      <span className="text-[10px]" style={{ color: "#8B90A0" }}>{t("hero.demo.badge")}</span>
                     </div>
                   </div>
-                  <div className="p-5 min-h-[300px]">
+                  <div className="p-5 min-h-[380px]">
                     <div className="flex justify-end mb-3">
                       <div className="bg-blue-600 text-white text-sm rounded-2xl px-4 py-2 max-w-[85%] min-h-[2.5rem]">
                         {questionText}
@@ -256,21 +262,20 @@ export default function Hero() {
                     </div>
 
                     <div
-                      className={`bg-gray-100/80 dark:bg-gray-800/80 rounded-2xl p-4 mb-3 transition-opacity duration-300 ${
-                        questionDone ? "opacity-100" : "opacity-0"
-                      }`}
+                      className="rounded-2xl p-4 mb-3 transition-opacity duration-300"
+                      style={{ background: "#171B26", opacity: questionDone ? 1 : 0 }}
                     >
-                      <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 min-h-[2.5rem]">
+                      <p className="text-sm mb-3 min-h-[2.5rem]" style={{ color: "#C7CBD6" }}>
                         {introText}
-                        {phase === "typingIntro" && <span className="inline-block w-[2px] h-[1em] bg-gray-500 ml-0.5 align-middle animate-pulse" />}
+                        {phase === "typingIntro" && <span className="inline-block w-[2px] h-[1em] bg-gray-400 ml-0.5 align-middle animate-pulse" />}
                       </p>
 
                       <div className="flex items-end gap-3 h-32">
                         {DEMO_BARS.map((b, i) => (
                           <div key={b.label} className="flex-1 flex flex-col items-center justify-end">
                             <span
-                              className="text-[10px] font-semibold text-gray-700 dark:text-gray-300 mb-1 transition-opacity duration-300"
-                              style={{ opacity: barsVisible ? 1 : 0, transitionDelay: `${i * BAR_STAGGER_MS + 250}ms` }}
+                              className="text-[10px] font-semibold mb-1 transition-opacity duration-300"
+                              style={{ color: "#C7CBD6", opacity: barsVisible ? 1 : 0, transitionDelay: `${i * BAR_STAGGER_MS + 250}ms` }}
                             >
                               ${(b.value / 1000).toFixed(0)}K
                             </span>
@@ -294,19 +299,23 @@ export default function Hero() {
                             >
                               <b.Icon />
                             </span>
-                            <span className="text-[9px] text-gray-400 dark:text-gray-500 mt-1 text-center leading-tight min-h-[2.2em] flex items-start justify-center">{b.label}</span>
+                            <span className="text-[9px] mt-1 text-center leading-tight" style={{ color: "#6B7080" }}>{b.label}</span>
                           </div>
                         ))}
                       </div>
                     </div>
 
                     <div
-                      className={`bg-green-50 dark:bg-green-950 dark:ring-1 dark:ring-green-500/30 text-green-800 dark:text-green-300 text-sm rounded-xl px-4 py-3 min-h-[2.75rem] transition-opacity duration-300 ${
-                        introDone ? "opacity-100" : "opacity-0"
-                      }`}
+                      className="text-sm rounded-xl px-4 py-3 min-h-[2.75rem] transition-opacity duration-300"
+                      style={{
+                        background: "#171B26",
+                        borderTop: "1px solid #262B3B",
+                        color: "#8FE3B0",
+                        opacity: introDone ? 1 : 0,
+                      }}
                     >
                       {summaryText}
-                      {phase === "typingSummary" && <span className="inline-block w-[2px] h-[1em] bg-green-700 ml-0.5 align-middle animate-pulse" />}
+                      {phase === "typingSummary" && <span className="inline-block w-[2px] h-[1em] ml-0.5 align-middle animate-pulse" style={{ background: "#8FE3B0" }} />}
                     </div>
                   </div>
                 </div>

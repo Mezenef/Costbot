@@ -239,13 +239,13 @@ export default function DashboardPage() {
                 style={{ background: "linear-gradient(90deg, #F3EDFF, #F3EDFF)", borderColor: "rgba(168,85,247,0.2)" }}
               >
                 <div>
-                  <h2 className="font-semibold text-gray-900 dark:text-white">
+                  <h2 className="font-semibold text-gray-900">
                     {t("dashboard.greeting", {
                       name: user?.full_name?.split(" ")[0] || "",
                     })}{" "}
                     👋
                   </h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  <p className="text-sm text-gray-500 mt-1">
                     {getPeriodChangeText(data, timeframe, t)}
                   </p>
                 </div>

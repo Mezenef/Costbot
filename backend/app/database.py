@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS ReportHistory (
     UserId INTEGER,
     GeneratedDate TEXT DEFAULT CURRENT_TIMESTAMP::TEXT,
     Period TEXT,
-    Language TEXT
+    Language TEXT,
+    PdfData BYTEA
 );
 
 CREATE TABLE IF NOT EXISTS CostRecommendations (
@@ -226,6 +227,7 @@ def init_schema(conn: PGConnection) -> None:
         ALTER TABLE Users ADD COLUMN IF NOT EXISTS Role TEXT DEFAULT 'Kullanıcı';
         ALTER TABLE ScheduledReports ADD COLUMN IF NOT EXISTS Name TEXT;
         ALTER TABLE ScheduledReports DROP CONSTRAINT IF EXISTS scheduledreports_userid_key;
+        ALTER TABLE ReportHistory ADD COLUMN IF NOT EXISTS PdfData BYTEA;
         CREATE INDEX IF NOT EXISTS idx_covering_service_cost
             ON CloudCosts(ServiceName, PreTaxCost);
         CREATE INDEX IF NOT EXISTS idx_covering_date_cost

@@ -54,17 +54,18 @@ export default function AutomateEfficiency() {
             </div>
           ))}
 
-          {/* Son bant: canli gradient, vurgulu kapanis */}
+          {/* Son bant: canli gradient, vurgulu kapanis -- diger bantlarla
+              AYNI koyu mor renk tonu (#3B1D82) kullaniliyor, beyaz DEGIL */}
           <div
             className="flex flex-col sm:flex-row items-center sm:justify-between gap-2 px-8 py-8 text-center sm:text-left"
             style={{ background: "linear-gradient(135deg, #7C3AED 0%, #EC4899 100%)" }}
           >
             <div className="flex items-start gap-1">
-              <span className="text-6xl md:text-7xl font-black leading-none text-white">
+              <span className="text-6xl md:text-7xl font-black leading-none" style={{ color: "#3B1D82" }}>
                 {t("efficiency.band5.value")}
               </span>
             </div>
-            <p className="text-sm leading-snug text-white/90 text-center sm:text-right max-w-[180px]">
+            <p className="text-sm leading-snug text-center sm:text-right max-w-[180px]" style={{ color: "#3B1D82", opacity: 0.8 }}>
               {t("efficiency.band5.label")}
             </p>
           </div>

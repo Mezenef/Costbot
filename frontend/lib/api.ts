@@ -208,6 +208,12 @@ export function getReportDownloadUrl(language: string = "tr", userId?: number, g
   const granularityParam = granularity ? `&granularity=${granularity}` : "";
   return `${API_URL}/reports/download?language=${language}&user_id=${userId ?? ""}${granularityParam}`;
 }
+// Geçmişteki bir raporu, O GÜNKÜ BİREBİR AYNI PDF ile indirir --
+// güncel veriyle yeniden ÜRETMEZ, veritabanında saklanan orijinal
+// dosyayı döndürür.
+export function getReportHistoryDownloadUrl(reportId: number, userId?: number): string {
+  return `${API_URL}/reports/history/${reportId}/download?user_id=${userId ?? ""}`;
+}
 export async function deleteRecommendation(id: number, userId: number): Promise<void> {
   const res = await fetch(`${API_URL}/recommendations/${id}?user_id=${userId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Öneri silinemedi.");

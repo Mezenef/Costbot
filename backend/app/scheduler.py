@@ -18,6 +18,7 @@ kartı, gerçek bugünün 1 gün gerisinde kalmıştı).
 """
 import os
 import logging
+import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -112,11 +113,31 @@ def _check_forecast_threshold() -> None:
 
         _log_notified(marker, period, estimated)
 
+
+# NOT: Bu kilit, _send_scheduled_reports() fonksiyonunun AYNI ANDA
+# birden fazla kez (hem APScheduler'ın kendi dakikalık döngüsünden HEM
+# DE kullanıcı bir zamanlama kaydettiğinde/düzenlediğinde tetiklenen
+# anlık çağrıdan) çalışmasını engeller -- aksi hâlde ikisi de "henüz
+# gönderilmedi" görüp AYNI raporu İKİ KEZ gönderebiliyordu (kullanıcı
+# testinde tam olarak yaşanan sorun).
+_scheduled_reports_lock = threading.Lock()
+
+
 def _send_scheduled_reports() -> None:
     """Her saat kontrol edilir: ScheduledReports tablosundaki her kayıt
     için, BUGÜN 'gönderilmesi gereken gün' mü VE şu anki saat
     'TimeOfDay'e eşit ya da geçmiş mi kontrol edilir. Aynı dönem için
     (LastSentDate ile) TEKRAR gönderim engellenir."""
+    if not _scheduled_reports_lock.acquire(blocking=False):
+        logger.info("Zamanlanmış rapor kontrolü zaten çalışıyor, bu çağrı atlanıyor.")
+        return
+    try:
+        _send_scheduled_reports_inner()
+    finally:
+        _scheduled_reports_lock.release()
+
+
+def _send_scheduled_reports_inner() -> None:
     from .report import generate_pdf_report
     from .email_service import send_report_email
 
@@ -133,7 +154,6 @@ def _send_scheduled_reports() -> None:
     ).fetchall()
 
     for sched in schedules:
-        # Bugün "gönderilmesi gereken gün" mü kontrol et.
         is_due_today = False
         if sched["Granularity"] == "week":
             is_due_today = (sched["DayOfWeek"] == now.isoweekday())
@@ -145,9 +165,9 @@ def _send_scheduled_reports() -> None:
         if not is_due_today:
             continue
         if sched["LastSentDate"] == today_str:
-            continue  # bugün zaten gönderildi
+            continue
         if current_hm < sched["TimeOfDay"]:
-            continue  # henüz saati gelmedi
+            continue
 
         recipients = [r.strip() for r in (sched["Recipients"] or "").split(",") if r.strip()]
         if not recipients:
@@ -168,6 +188,7 @@ def _send_scheduled_reports() -> None:
             logger.error("Zamanlanmış rapor gönderilemedi (user_id=%s): %s", sched["UserId"], e)
 
     conn.close()
+
 
 def _sync_azure_data() -> None:
     """Günde bir kez (varsayılan), gerçek Azure Cost Management verisini
@@ -245,7 +266,6 @@ def check_and_notify() -> None:
             _log_notified(spike["service_name"], period, spike["change_pct"])
             logger.info("Otomatik uyarı gönderildi: %s (%s)", spike["service_name"], period)
 
-    # Tahmin esik kontrolu -- spike olsun olmasin HER ZAMAN calisir
     _check_forecast_threshold()
 
 
@@ -254,19 +274,14 @@ _scheduler = None
 
 def _daily_job() -> None:
     """Günde bir kez: önce Azure verisini güncelle, HEMEN ARDINDAN o taze
-    veri üzerinden uyarı kontrolü yap. İkisini AYRI zamanlayıcılara
-    bölmüyoruz -- aksi hâlde uyarı kontrolü, veri henüz güncellenmeden
-    (eski veri üzerinden) çalışabilir, bu da anlamsız/gereksiz olurdu."""
+    veri üzerinden uyarı kontrolü yap."""
     _sync_azure_data()
     check_and_notify()
 
 
 def _hourly_job() -> None:
     """Saatte bir çalışır -- zamanlanmış raporların gönderilme vakti
-    gelip gelmediğini kontrol eder. Ana senkronizasyon işinden (4 saatte
-    bir) AYRI ve daha SIK çalışır, çünkü kullanıcı "09:00'da gönder"
-    dediğinde bu saatin doğru yakalanabilmesi için saatlik kontrol
-    gerekir."""
+    gelip gelmediğini kontrol eder."""
     _send_scheduled_reports()
 
 
@@ -277,22 +292,7 @@ def start_scheduler() -> None:
     _scheduler = BackgroundScheduler()
 
     sync_hours = int(os.getenv("AZURE_SYNC_INTERVAL_HOURS", "24"))
-    # NOT: "next_run_time=datetime.now()" (backend her başladığında hemen
-    # senkronize etme) GERİ ALINDI -- geliştirme sırasında kod üzerinde
-    # sık değişiklik yapılırken, her backend yeniden başlatmasında Azure'a
-    # istek gitmesi, hız sınırına (429) daha sık takılmaya neden oluyordu.
-    # Şimdilik normal "interval" davranışına dönüldü: ilk çalıştırma,
-    # backend açıldıktan "sync_hours" saat SONRA gerçekleşir.
     _scheduler.add_job(_daily_job, "interval", hours=sync_hours)
-    # NOT: Kullanıcı testinde bulunan gerçek sorun -- saatlik kontrol
-    # sıklığı, kullanıcının belirlediği dakika hassasiyetli saati
-    # YAKALAYAMIYORDU (saat geçtikten sonra bile en fazla 1 saat
-    # gecikebiliyordu). Rapor zamanlamaları dakika hassasiyetinde
-    # olduğu için, kontrol sıklığı dakikaya indirildi -- bu, hem daha
-    # doğru hem performans açısından sorun teşkil etmiyor (tek
-    # yaptığı, hafif bir SQL sorgusuyla "gönderilmesi gereken var mı"
-    # diye bakmak; gerçek PDF/e-posta işi sadece koşullar sağlanınca
-    # çalışıyor).
     _scheduler.add_job(_hourly_job, "interval", minutes=1)
 
     _scheduler.start()

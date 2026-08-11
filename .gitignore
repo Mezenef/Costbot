@@ -28,3 +28,7 @@ backend/data/graph_token_cache.bin
 # Diger
 .DS_Store
 *.log
+
+appsettings.json
+frontend-appsettings.json
+costbot_backup.dump
