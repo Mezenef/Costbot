@@ -78,28 +78,23 @@ Bu projeyi, **SabancıDx bünyesinde tamamladığım yazılım mühendisliği st
 
 <br/><br/>
 
-<table>
-<tr>
-<td width="50%">
 <p align="center"><b>📊 Dashboard</b></p>
-<img src="docs/images/Dashboard.PNG" width="100%" alt="Dashboard"/>
-</td>
-<td width="50%">
+<img src="docs/images/Dashboard.PNG" width="800" alt="Dashboard"/>
+
+<br/><br/>
+
 <p align="center"><b>💬 AI Sohbet Arayüzü</b></p>
-<img src="docs/images/chat.png" width="100%" alt="AI Sohbet"/>
-</td>
-</tr>
-<tr>
-<td width="50%">
+<img src="docs/images/chat.png" width="800" alt="AI Sohbet"/>
+
+<br/><br/>
+
 <p align="center"><b>📄 PDF Rapor</b></p>
-<img src="docs/images/report.png" width="100%" alt="PDF Rapor"/>
-</td>
-<td width="50%">
+<img src="docs/images/report.png" width="800" alt="PDF Rapor"/>
+
+<br/><br/>
+
 <p align="center"><b>🔍 Cost Analyzer</b></p>
-<img src="docs/images/analyzer.PNG" width="100%" alt="Cost Analyzer"/>
-</td>
-</tr>
-</table>
+<img src="docs/images/analyzer.PNG" width="800" alt="Cost Analyzer"/>
 
 </div>
 
