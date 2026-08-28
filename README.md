@@ -73,18 +73,31 @@ Bu projeyi, **SabancıDx bünyesinde tamamladığım yazılım mühendisliği st
 
 <div align="center">
 
+<p align="center"><b>🖥️ Web Arayüzü</b></p>
 <img src="docs/images/web_arayuz.PNG" width="800" alt="Web Arayüzü"/>
 
 <br/><br/>
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/Dashboard.PNG" width="100%" alt="Dashboard"/><p align="center"><b>📊 Dashboard</b></p></td>
-<td width="50%"><img src="docs/images/chat.png" width="100%" alt="AI Sohbet"/><p align="center"><b>💬 AI Sohbet Arayüzü</b></p></td>
+<td width="50%">
+<p align="center"><b>📊 Dashboard</b></p>
+<img src="docs/images/Dashboard.PNG" width="100%" alt="Dashboard"/>
+</td>
+<td width="50%">
+<p align="center"><b>💬 AI Sohbet Arayüzü</b></p>
+<img src="docs/images/chat.png" width="100%" alt="AI Sohbet"/>
+</td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/images/report.png" width="100%" alt="PDF Rapor"/><p align="center"><b>📄 PDF Rapor</b></p></td>
-<td width="50%"><img src="docs/images/analyzer.PNG" width="100%" alt="Cost Analyzer"/><p align="center"><b>🔍 Cost Analyzer</b></p></td>
+<td width="50%">
+<p align="center"><b>📄 PDF Rapor</b></p>
+<img src="docs/images/report.png" width="100%" alt="PDF Rapor"/>
+</td>
+<td width="50%">
+<p align="center"><b>🔍 Cost Analyzer</b></p>
+<img src="docs/images/analyzer.PNG" width="100%" alt="Cost Analyzer"/>
+</td>
 </tr>
 </table>
 
