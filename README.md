@@ -1,4 +1,3 @@
-cat > README.md << 'EOF'
 <div align="center">
 
 # 🤖 CostBot
@@ -16,11 +15,33 @@ cat > README.md << 'EOF'
 
 </div>
 
+> **Not:** Bu proje, staj süresince SabancıDx'in Azure kaynakları üzerinde canlıya alınmıştı. Staj sonunda kurumsal kaynaklar kapatıldığı için canlı demo artık erişilebilir değil — aşağıdaki ekran görüntüleri, uygulamanın gerçek Azure ortamındaki çalışır hâlini yansıtmaktadır. Proje `docker-compose up` ile yerel ortamda eksiksiz çalıştırılabilir.
+
 ---
 
-## 📌 Nedir Bu?
+## 💡 Bu Proje Ne Yapıyor?
 
-**CostBot**, kurumların Azure bulut harcamalarını **doğal dilde soru sorarak** analiz edebilmesini sağlayan, uçtan uca geliştirilmiş bir web uygulaması. Gerçek Azure Cost Management verisiyle çalışır, yapay zeka destekli bir SQL agent'ı üzerinden sorularınızı yanıtlar ve size **halüsinasyon içermeyen**, gerçek verilere dayalı cevaplar sunar.
+Kurumların Azure bulut harcamalarını incelemesi genelde onlarca dashboard ekranında dolaşmayı, filtre üstüne filtre uygulamayı gerektirir. **CostBot**, bu süreci tek bir soruya indiriyor: *"Bu ay en pahalı servisim hangisi?"*
+
+Gerçek Azure Cost Management verisiyle çalışan bu uygulama, kullanıcının doğal dilde sorduğu soruyu bir yapay zekâ ajanı aracılığıyla SQL sorgusuna çevirir, gerçek veritabanında çalıştırır ve **hiçbir sayı uydurmadan**, gerçek sonuçlara dayalı bir cevap üretir.
+
+Bu projeyi, **SabancıDx bünyesinde tamamladığım yazılım mühendisliği stajı** kapsamında, fikir aşamasından canlı bir Azure ortamına taşınmasına kadar **uçtan uca tek başıma geliştirdim.**
+
+---
+
+## 📸 Ekran Görüntüleri
+
+![Web Arayüzü](docs/images/web_arayuz.PNG)
+
+| Dashboard | AI Sohbet Arayüzü |
+|---|---|
+| ![Dashboard](docs/images/Dashboard.PNG) | ![Sohbet](docs/images/chat.png) |
+
+| PDF Rapor | Cost Analyzer |
+|---|---|
+| ![Rapor](docs/images/report.png) | ![Analyzer](docs/images/analyzer.PNG) |
+
+---
 
 ## ✨ Öne Çıkan Özellikler
 
@@ -32,36 +53,58 @@ cat > README.md << 'EOF'
 | 💡 **Akıllı Öneriler** | Düşük kullanım + yüksek maliyet sezgisiyle tasarruf fırsatlarını tespit eder |
 | 🎯 **FinOps Sağlık Puanı** | 5 kural tabanlı kritere göre 0-100 arası deterministik bir skor |
 | 🔔 **Otomatik Uyarılar** | Maliyet artışlarını ve bütçe eşiği aşımlarını e-posta + Microsoft Teams ile bildirir |
-| 📄 **PDF Raporlama** | Tek tıkla, çok dilli (TR/EN), günlük/haftalık/aylık dönemsel rapor üretimi |
-| 🔐 **Güvenli Kimlik Doğrulama** | E-posta doğrulamalı kayıt, rol tabanlı erişim (Yönetici/Finans/DevOps/Kullanıcı) |
+| 📄 **PDF Raporlama** | Tek tıkla, çok dilli (TR/EN), zamanlanmış dönemsel rapor üretimi |
+| 🔐 **Güvenli Kimlik Doğrulama** | E-posta doğrulamalı kayıt, rol tabanlı erişim |
 | ⚡ **Gerçek Zamanlı Sohbet** | Yanıtlar, ChatGPT tarzı akan (streaming) bir arayüzle gelir |
+
+---
 
 ## 🏗️ Mimari
 
-┌─────────────────┐ ┌──────────────────┐ ┌─────────────────┐
-│ Next.js 15 │─────▶│ FastAPI │─────▶│ PostgreSQL │
-│ TypeScript │◀─────│ Python │◀─────│ │
-│ (Frontend) │ │ (Backend) │ │ (Veritabanı) │
-└─────────────────┘ └────────┬─────────┘ └─────────────────┘
-│
-┌──────────┴──────────┐
-▼ ▼
-┌──────────────────┐ ┌─────────────────────┐
-│ Bulutistan LLM │ │ Azure Cost │
-│ (SQL Agent) │ │ Management API │
-└──────────────────┘ └─────────────────────┘
+```
+┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
+│    Next.js 15    │─────▶│     FastAPI       │─────▶│   PostgreSQL     │
+│    TypeScript     │◀─────│     Python         │◀─────│                  │
+│    (Frontend)      │      │    (Backend)        │      │  (Veritabanı)    │
+└─────────────────┘      └────────┬─────────┘      └─────────────────┘
+                                    │
+                        ┌──────────┴──────────┐
+                        ▼                     ▼
+              ┌──────────────────┐  ┌─────────────────────┐
+              │   Bulutistan LLM   │  │   Azure Cost         │
+              │   (SQL Agent)       │  │   Management API       │
+              └──────────────────┘  └─────────────────────┘
+```
 
-Kullanıcının sorusu, LLM tarafından **SQL'e çevrilir** → güvenlik doğrulamasından geçer → PostgreSQL'de çalıştırılır → **gerçek sonuç**, ikinci bir LLM çağrısıyla doğal dile dönüştürülür. Hiçbir sayı uydurulmaz.
+Kullanıcının sorusu LLM tarafından **SQL'e çevrilir** → güvenlik doğrulamasından geçer (yalnızca `SELECT`) → PostgreSQL'de çalıştırılır → gerçek sonuç, ikinci bir LLM çağrısıyla doğal dile dönüştürülür.
+
+---
 
 ## 🛠️ Teknoloji Yığını
 
-**Backend:** Python · FastAPI · PostgreSQL · LangChain · Azure Identity SDK · ReportLab · Matplotlib · Pytest
+**Backend:** Python · FastAPI · PostgreSQL · LangChain · Azure Identity SDK · ReportLab · Matplotlib · APScheduler · Pytest
 
 **Frontend:** Next.js 15 · TypeScript · Tailwind CSS · Recharts
 
+**Altyapı & DevOps:** Docker · Azure App Service · Azure Database for PostgreSQL · Azure Container Registry
+
 **Entegrasyonlar:** Azure Cost Management API · SMTP · Microsoft Teams Workflows
 
-## 🚀 Kurulum
+---
+
+## 🚀 Geliştirme Süreci
+
+Bu proje kapsamında yalnızca kod yazmakla kalmadım; aynı zamanda:
+
+- Gerçek bir bulut API'sinden (Azure Cost Management) canlı veri çekme entegrasyonu kurdum
+- LangChain ile bir SQL ajanı geliştirip halüsinasyon riskini SQL doğrulama katmanıyla azalttım
+- Uygulamayı Docker ile container'laştırıp Azure App Service üzerinde canlıya aldım
+- HTTPS zorunluluğu, CORS kısıtlaması ve veritabanı erişim kontrolü gibi güvenlik önlemlerini uyguladım
+- Proje, `docker-compose up` ile tek komutla yerel ortamda da eksiksiz çalışacak şekilde tasarlandı
+
+---
+
+## ⚙️ Yerel Kurulum
 
 <details>
 <summary><b>Backend</b></summary>
@@ -86,7 +129,13 @@ npm run dev
 ```
 </details>
 
-Uygulama, `http://localhost:3000` adresinde çalışmaya başlar.
+Ya da tüm sistemi Docker ile tek komutla ayağa kaldırabilirsiniz:
+
+```bash
+docker-compose up -d --build
+```
+
+Uygulama `http://localhost:3000` adresinde çalışmaya başlar.
 
 ## 🧪 Testler
 
@@ -95,19 +144,11 @@ cd backend
 pytest test/ -v
 ```
 
-## 📸 Ekran Görüntüleri
-
-> *(Buraya Dashboard, Chat ve Rapor ekranlarından görseller eklenebilir.)*
-
-## 📄 Lisans
-
-Bu proje, bir staj kapsamında geliştirilmiştir.
-
 ---
 
-<div align="center">
+## 📬 İletişim
 
-**Geliştirici:** Aleyna Erdoğan
+**Aleyna Erdoğan**
+[LinkedIn](https://www.linkedin.com/in/aleyna-erdogan) · aleynaaerdd@gmail.com
 
-</div>
-EOF
+Bu proje, SabancıDx bünyesinde tamamlanan bir staj kapsamında geliştirilmiştir.
